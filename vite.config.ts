@@ -10,7 +10,19 @@ export default defineConfig({
         target: 'http://localhost:3001',
         changeOrigin: true,
       },
+      '/preview': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
+      '/proxy': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+      },
       '/terminal': {
+        target: 'ws://localhost:3001',
+        ws: true,
+      },
+      '/events': {
         target: 'ws://localhost:3001',
         ws: true,
       },

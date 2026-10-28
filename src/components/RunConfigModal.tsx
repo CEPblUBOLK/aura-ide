@@ -223,7 +223,7 @@ export const RunConfigModal: React.FC<RunConfigModalProps> = ({
                       onClick={() => handleSelectPreset(c)}
                       className={`flex items-center justify-between p-2.5 rounded-md cursor-pointer transition ${
                         isSelected
-                          ? 'bg-emerald-950/60 border border-emerald-500/50 text-[var(--text-primary)]'
+                          ? 'bg-emerald-500/15 border border-emerald-500/50 text-[var(--text-primary)]'
                           : 'hover:bg-[var(--bg-hover)] border border-transparent text-[var(--text-primary)]'
                       }`}
                     >

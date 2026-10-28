@@ -4,6 +4,7 @@ using System.IO;
 using System.Net.Sockets;
 using System.Runtime.InteropServices;
 using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Interop;
@@ -107,6 +108,9 @@ namespace AuraIDE {
         [DllImport("user32.dll", SetLastError = true)]
         private static extern IntPtr LoadImage(IntPtr hinst, string lpszName, uint uType, int cxDesired, int cyDesired, uint fuLoad);
 
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool DestroyIcon(IntPtr hIcon);
+
         private const uint IMAGE_ICON = 1;
         private const uint LR_LOADFROMFILE = 0x00000010;
         private const int WM_SETICON = 0x0080;
@@ -118,12 +122,15 @@ namespace AuraIDE {
 
         private const string CHROME_UA = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36";
 
+        private static IntPtr _hBigIcon = IntPtr.Zero;
+        private static IntPtr _hSmallIcon = IntPtr.Zero;
+
         [STAThread]
         public static void Main() {
             string baseDir = AppDomain.CurrentDomain.BaseDirectory;
             int port = 3001;
 
-            // 1. Ensure backend Node.js server is active
+            // 1. Start backend Node.js server asynchronously (non-blocking)
             if (!IsPortOpen("127.0.0.1", port)) {
                 try {
                     ProcessStartInfo psi = new ProcessStartInfo {
@@ -136,14 +143,9 @@ namespace AuraIDE {
                     };
                     serverProcess = Process.Start(psi);
                 } catch {}
-
-                for (int i = 0; i < 40; i++) {
-                    if (IsPortOpen("127.0.0.1", port)) break;
-                    Thread.Sleep(50);
-                }
             }
 
-            // 2. Create pure frameless desktop window
+            // 2. Create pure frameless desktop window immediately
             App app = new App();
             Window win = new Window {
                 Title = "Aura IDE",
@@ -253,13 +255,13 @@ namespace AuraIDE {
 
                 if (File.Exists(icoPath)) {
                     try {
-                        IntPtr hBigIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 48, 48, LR_LOADFROMFILE);
-                        if (hBigIcon == IntPtr.Zero) hBigIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 256, 256, LR_LOADFROMFILE);
-                        IntPtr hSmallIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
-                        if (hSmallIcon == IntPtr.Zero) hSmallIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
+                        _hBigIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 48, 48, LR_LOADFROMFILE);
+                        if (_hBigIcon == IntPtr.Zero) _hBigIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 256, 256, LR_LOADFROMFILE);
+                        _hSmallIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 32, 32, LR_LOADFROMFILE);
+                        if (_hSmallIcon == IntPtr.Zero) _hSmallIcon = LoadImage(IntPtr.Zero, icoPath, IMAGE_ICON, 16, 16, LR_LOADFROMFILE);
 
-                        if (hBigIcon != IntPtr.Zero) SendMessage(hwnd, WM_SETICON, (IntPtr)ICON_BIG, hBigIcon);
-                        if (hSmallIcon != IntPtr.Zero) SendMessage(hwnd, WM_SETICON, (IntPtr)ICON_SMALL, hSmallIcon);
+                        if (_hBigIcon != IntPtr.Zero) SendMessage(hwnd, WM_SETICON, (IntPtr)ICON_BIG, _hBigIcon);
+                        if (_hSmallIcon != IntPtr.Zero) SendMessage(hwnd, WM_SETICON, (IntPtr)ICON_SMALL, _hSmallIcon);
                     } catch {}
                 }
 
@@ -273,12 +275,22 @@ namespace AuraIDE {
 
             win.Loaded += async (s, e) => {
                 try {
+                    // Poll server port in background task while WebView2 environment is created
+                    var portTask = Task.Run(() => {
+                        for (int i = 0; i < 60; i++) {
+                            if (IsPortOpen("127.0.0.1", port)) return true;
+                            Thread.Sleep(50);
+                        }
+                        return false;
+                    });
+
                     string userDataFolder = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData), "AuraIDE", "WebViewData");
 
-                    // Standard stable Chromium options (never crash with RESULT_CODE_KILLED_BAD_MESSAGE)
+                    // Standard stable Chromium options
                     var envOptions = new CoreWebView2EnvironmentOptions();
                     var sharedEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
 
+                    await portTask;
                     await webView.EnsureCoreWebView2Async(sharedEnv);
                     webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(24, 24, 26);
                     webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -351,6 +363,15 @@ namespace AuraIDE {
             };
 
             win.Closed += (s, e) => {
+                if (_hBigIcon != IntPtr.Zero) {
+                    try { DestroyIcon(_hBigIcon); } catch {}
+                    _hBigIcon = IntPtr.Zero;
+                }
+                if (_hSmallIcon != IntPtr.Zero) {
+                    try { DestroyIcon(_hSmallIcon); } catch {}
+                    _hSmallIcon = IntPtr.Zero;
+                }
+
                 if (serverProcess != null && !serverProcess.HasExited) {
                     try {
                         Process.Start(new ProcessStartInfo {

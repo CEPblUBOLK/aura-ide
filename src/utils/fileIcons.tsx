@@ -40,11 +40,16 @@ export function getFileLanguage(fileName: string): string {
       return 'rust';
     case 'go':
       return 'go';
-    case 'cpp':
     case 'c':
     case 'h':
+      return 'c';
+    case 'cpp':
     case 'hpp':
+    case 'cc':
+    case 'cxx':
       return 'cpp';
+    case 'cs':
+      return 'csharp';
     case 'java':
       return 'java';
     case 'md':
@@ -99,6 +104,15 @@ export function getFileIcon(fileName: string, isDirectory: boolean, isOpen?: boo
       return <FileCode className="w-4 h-4 text-[#fbbf24] shrink-0" />;
     case 'rs':
       return <FileCode className="w-4 h-4 text-[#ea580c] shrink-0" />;
+    case 'cs':
+      return <FileCode className="w-4 h-4 text-[#a855f7] shrink-0" />;
+    case 'c':
+    case 'cpp':
+    case 'h':
+    case 'hpp':
+      return <FileCode className="w-4 h-4 text-[#3b82f6] shrink-0" />;
+    case 'go':
+      return <FileCode className="w-4 h-4 text-[#00add8] shrink-0" />;
     case 'png':
     case 'jpg':
     case 'jpeg':

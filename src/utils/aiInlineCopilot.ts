@@ -16,18 +16,16 @@ export function registerAiInlineCopilot(monaco: any) {
 
   let lastFetchTime = 0;
   let lastResult: CacheEntry | null = null;
+  let activeAbortController: AbortController | null = null;
   const memoryCache = new Map<string, string>();
 
-  // Register for all languages via wildcard selector '*'
   monaco.languages.registerInlineCompletionsProvider('*', {
     provideInlineCompletions: async (model: any, position: any, context: any, token: any) => {
-      // 1. Check if AI Copilot is enabled in user settings
       let isEnabled = true;
       try {
         const saved = localStorage.getItem('aura_settings');
-        if (saved) {
-          const parsed = JSON.parse(saved);
-          if (parsed.aiCopilotEnabled === false) isEnabled = false;
+        if (saved && JSON.parse(saved).aiCopilotEnabled === false) {
+          isEnabled = false;
         }
       } catch {}
 
@@ -37,7 +35,7 @@ export function registerAiInlineCopilot(monaco: any) {
       const lineContent = model.getLineContent(position.lineNumber);
       const isExplicit = context?.triggerKind === 1;
 
-      // 2. Fast local prefix continuation check (instant 0ms response when continuing typing)
+      // 1. Local prefix continuation check (instant 0ms response when continuing typing)
       if (lastResult && lastResult.modelUri === modelUri && lastResult.line === position.lineNumber) {
         if (position.column >= lastResult.col) {
           const typedSince = lineContent.substring(lastResult.col - 1, position.column - 1);
@@ -46,12 +44,10 @@ export function registerAiInlineCopilot(monaco: any) {
             if (remainder) {
               const maxCol = model.getLineMaxColumn(position.lineNumber);
               return {
-                items: [
-                  {
-                    insertText: remainder,
-                    range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
-                  }
-                ],
+                items: [{
+                  insertText: remainder,
+                  range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+                }],
                 enableForwardStability: true
               };
             }
@@ -59,26 +55,20 @@ export function registerAiInlineCopilot(monaco: any) {
         }
       }
 
-      // 3. Cooperative debounce: wait 280ms for typing pause (or instant if explicit Alt+\)
-      if (!isExplicit) {
-        await new Promise((resolve) => setTimeout(resolve, 280));
-        if (token.isCancellationRequested) return { items: [] };
-      }
-
-      // 4. Rate-limit guard for Free Tier (15 RPM):
-      // Automatic completions require at least 1200ms spacing between requests
-      const now = Date.now();
-      if (!isExplicit && now - lastFetchTime < 1200) {
-        return { items: [] };
-      }
-
-      // Don't autocomplete if cursor is in middle of a word unless explicitly requested
+      // Do not autocomplete inside a word unless explicitly requested (Alt+\)
       const charAfterCursor = lineContent.charAt(position.column - 1);
       if (charAfterCursor && /[a-zA-Z0-9_]/.test(charAfterCursor) && !isExplicit) {
         return { items: [] };
       }
 
-      // 5. Build prefix & suffix context
+      // 2. Smart debounce considering rate-limit window
+      if (!isExplicit) {
+        const elapsedSinceLastFetch = Date.now() - lastFetchTime;
+        const requiredWait = Math.max(350, 1200 - elapsedSinceLastFetch);
+        await new Promise((resolve) => setTimeout(resolve, requiredWait));
+        if (token.isCancellationRequested) return { items: [] };
+      }
+
       const offset = model.getOffsetAt(position);
       const fullText = model.getValue();
       const prefix = fullText.slice(0, offset);
@@ -86,44 +76,47 @@ export function registerAiInlineCopilot(monaco: any) {
 
       if (!prefix.trim()) return { items: [] };
 
-      const cacheKey = prefix.slice(-200) + ':::' + suffix.slice(0, 100);
+      const cacheKey = `${prefix.slice(-200)}:::${suffix.slice(0, 100)}`;
       if (memoryCache.has(cacheKey)) {
         const cached = memoryCache.get(cacheKey)!;
         const maxCol = model.getLineMaxColumn(position.lineNumber);
         return {
-          items: [
-            {
-              insertText: cached,
-              range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
-            }
-          ],
+          items: [{
+            insertText: cached,
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+          }],
           enableForwardStability: true
         };
       }
 
+      // Abort previous pending fetch
+      if (activeAbortController) {
+        activeAbortController.abort();
+      }
+      const controller = new AbortController();
+      activeAbortController = controller;
+
+      const cancelDisposable = token.onCancellationRequested?.(() => {
+        controller.abort();
+      });
+
       const language = model.getLanguageId();
       const filename = model.uri.path ? model.uri.path.split('/').pop() : 'code';
-
       lastFetchTime = Date.now();
 
       try {
         const res = await fetch('/api/ai/inline-complete', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ prefix, suffix, language, filename })
+          body: JSON.stringify({ prefix, suffix, language, filename }),
+          signal: controller.signal,
         });
 
-        if (token.isCancellationRequested) return { items: [] };
-        if (!res.ok) return { items: [] };
+        if (token.isCancellationRequested || !res.ok) return { items: [] };
 
         const data = await res.json();
-        let text = data.completion;
+        const text = data.completion;
         if (!text || typeof text !== 'string' || !text.trim()) return { items: [] };
-
-        // Strip leading newlines if cursor is at end of line
-        if (text.startsWith('\n') && lineContent.trim()) {
-          // Keep newline
-        }
 
         memoryCache.set(cacheKey, text);
         if (memoryCache.size > 150) {
@@ -139,23 +132,17 @@ export function registerAiInlineCopilot(monaco: any) {
         };
 
         const maxCol = model.getLineMaxColumn(position.lineNumber);
-
         return {
-          items: [
-            {
-              insertText: text,
-              range: new monaco.Range(
-                position.lineNumber,
-                position.column,
-                position.lineNumber,
-                maxCol
-              )
-            }
-          ],
+          items: [{
+            insertText: text,
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+          }],
           enableForwardStability: true
         };
       } catch {
         return { items: [] };
+      } finally {
+        cancelDisposable?.dispose?.();
       }
     },
     disposeInlineCompletions: () => {},

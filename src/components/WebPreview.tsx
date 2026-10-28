@@ -36,6 +36,7 @@ export const WebPreview: React.FC<WebPreviewProps> = ({
   });
   const [isDragging, setIsDragging] = useState(false);
 
+  const containerRef = useRef<HTMLDivElement>(null);
   const iframeRef = useRef<HTMLIFrameElement>(null);
 
   // Sync when user switches active HTML tab
@@ -62,7 +63,8 @@ export const WebPreview: React.FC<WebPreviewProps> = ({
     if (!isDragging) return;
 
     const handleMouseMove = (e: MouseEvent) => {
-      const newWidth = window.innerWidth - e.clientX;
+      const rightEdge = containerRef.current?.getBoundingClientRect().right ?? window.innerWidth;
+      const newWidth = rightEdge - e.clientX;
       updateWidth(newWidth);
     };
 
@@ -128,6 +130,7 @@ export const WebPreview: React.FC<WebPreviewProps> = ({
 
   return (
     <div 
+      ref={containerRef}
       style={{ width: `${panelWidth}px` }}
       className="relative flex flex-col h-full bg-[var(--bg-primary)] border-l border-[var(--border-subtle)] overflow-hidden select-none shrink-0 shadow-2xl z-20"
     >

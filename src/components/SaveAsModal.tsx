@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Save, X, ArrowRight, FileCheck } from 'lucide-react';
 
 interface SaveAsModalProps {
@@ -16,6 +16,12 @@ export const SaveAsModal: React.FC<SaveAsModalProps> = ({
 }) => {
   const [fileName, setFileName] = useState(currentFileName);
   const [isSaving, setIsSaving] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setFileName(currentFileName);
+    }
+  }, [isOpen, currentFileName]);
 
   if (!isOpen) return null;
 

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { FolderOpen, X, ArrowRight, FolderSearch } from 'lucide-react';
 
 interface OpenWorkspaceModalProps {
@@ -20,6 +20,13 @@ export const OpenWorkspaceModal: React.FC<OpenWorkspaceModalProps> = ({
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showManualInput, setShowManualInput] = useState(false);
+
+  useEffect(() => {
+    if (isOpen) {
+      setTargetPath(currentPath);
+      setError(null);
+    }
+  }, [isOpen, currentPath]);
 
   if (!isOpen) return null;
 

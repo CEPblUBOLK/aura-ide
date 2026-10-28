@@ -24,6 +24,7 @@ interface TerminalPanelProps {
   pendingCommand?: string | null;
   onCommandExecuted?: () => void;
   theme?: ThemeMode;
+  onOpenFileByPath?: (file: string, line?: number) => void;
 }
 
 interface TermTab {
@@ -339,6 +340,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   pendingCommand,
   onCommandExecuted,
   theme = 'macos-dark',
+  onOpenFileByPath,
 }) => {
   // Tabs: General interactive terminal + dedicated Run terminal
   const [tabs, setTabs] = useState<TermTab[]>([
@@ -353,6 +355,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   const pendingRunCommandRef = useRef<string | null>(null);
 
   const [isMaximized, setIsMaximized] = useState(false);
+  const [isDragging, setIsDragging] = useState(false);
   const isDraggingRef = useRef(false);
 
   const themeRef = useRef(theme);
@@ -438,6 +441,51 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
     const fitAddon = new FitAddon();
     term.loadAddon(fitAddon);
     term.open(container);
+
+    if (onOpenFileByPath && typeof (term as any).registerLinkProvider === 'function') {
+      try {
+        (term as any).registerLinkProvider({
+          provideLinks: (bufferLineNumber: number, callback: (links: any[]) => void) => {
+            const line = term.buffer.active.getLine(bufferLineNumber - 1)?.translateToString(true);
+            if (!line) {
+              callback([]);
+              return;
+            }
+            const links: any[] = [];
+            const regex1 = /([\w./\\-]+\.[a-zA-Z0-9]+):(\d+)(?::(\d+))?/g;
+            const regex2 = /File\s+"([^"]+)",\s+line\s+(\d+)/g;
+            let m: RegExpExecArray | null;
+            while ((m = regex1.exec(line)) !== null) {
+              const file = m[1];
+              const lineNum = parseInt(m[2], 10);
+              const startIdx = m.index + 1;
+              const endIdx = startIdx + m[0].length;
+              links.push({
+                range: { start: { x: startIdx, y: bufferLineNumber }, end: { x: endIdx, y: bufferLineNumber } },
+                text: m[0],
+                activate: () => {
+                  onOpenFileByPath(file, lineNum);
+                }
+              });
+            }
+            while ((m = regex2.exec(line)) !== null) {
+              const file = m[1];
+              const lineNum = parseInt(m[2], 10);
+              const startIdx = m.index + 1;
+              const endIdx = startIdx + m[0].length;
+              links.push({
+                range: { start: { x: startIdx, y: bufferLineNumber }, end: { x: endIdx, y: bufferLineNumber } },
+                text: m[0],
+                activate: () => {
+                  onOpenFileByPath(file, lineNum);
+                }
+              });
+            }
+            callback(links);
+          }
+        });
+      } catch {}
+    }
 
     // Native Copy & Paste handlers
     term.attachCustomKeyEventHandler((e) => {
@@ -649,6 +697,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   // Drag resizer
   const handleMouseDown = (e: React.MouseEvent) => {
     isDraggingRef.current = true;
+    setIsDragging(true);
     const startY = e.clientY;
     const startHeight = height;
 
@@ -662,6 +711,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
     const handleMouseUp = () => {
       isDraggingRef.current = false;
+      setIsDragging(false);
       window.removeEventListener('mousemove', handleMouseMove);
       window.removeEventListener('mouseup', handleMouseUp);
       safeFit(activeTabId);
@@ -679,8 +729,13 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         height: isMaximized ? '85%' : `${height}px`,
         display: isOpen ? 'flex' : 'none'
       }}
-      className="w-full flex-col bg-[var(--bg-secondary)] border-t border-[var(--border-subtle)] z-20 shrink-0 select-none transition-all duration-150"
+      className={`w-full flex-col bg-[var(--bg-secondary)] border-t border-[var(--border-subtle)] z-20 shrink-0 select-none ${isDragging ? '' : 'transition-all duration-150'}`}
     >
+      {/* Fullscreen drag overlay to prevent iframe / xterm mouse event trapping */}
+      {isDragging && (
+        <div className="fixed inset-0 z-50 cursor-ns-resize bg-transparent select-none" />
+      )}
+
       {/* Resizer Handle */}
       <div
         onMouseDown={handleMouseDown}
@@ -709,10 +764,10 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                   <TerminalIcon className="w-3.5 h-3.5 text-emerald-400" />
                 )}
                 <span>{tab.name}</span>
-                {tab.isRunTab && (
+                {tab.id !== 'general' && (
                   <button
                     onClick={(e) => handleCloseTab(tab.id, e)}
-                    title="Закрыть вкладку запуска"
+                    title="Закрыть вкладку терминала"
                     className="ml-1 p-0.5 rounded-full hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
                   >
                     <X className="w-3 h-3" />

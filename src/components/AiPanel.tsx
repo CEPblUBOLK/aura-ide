@@ -47,7 +47,11 @@ interface AiPanelProps {
     language: string;
     content: string;
   } | null;
+  activeCodeSelection?: string;
+  service?: 'gemini' | 'google' | 'deepseek';
+  onServiceChange?: (service: 'gemini' | 'google' | 'deepseek') => void;
   onInsertCode?: (code: string) => void;
+  onDiffCode?: (code: string) => void;
 }
 
 export const AiPanel: React.FC<AiPanelProps> = ({
@@ -56,9 +60,19 @@ export const AiPanel: React.FC<AiPanelProps> = ({
   width = 460,
   onWidthChange,
   activeTab,
+  activeCodeSelection,
+  service,
+  onServiceChange,
   onInsertCode,
+  onDiffCode,
 }) => {
-  const [activeService, setActiveService] = useState<'gemini' | 'google' | 'deepseek'>('gemini');
+  const [activeService, setActiveService] = useState<'gemini' | 'google' | 'deepseek'>(service || 'gemini');
+
+  useEffect(() => {
+    if (service && service !== activeService) {
+      setActiveService(service);
+    }
+  }, [service]);
   const [panelWidth, setPanelWidth] = useState(() => {
     const saved = localStorage.getItem('aura_ai_panel_width');
     return saved ? parseInt(saved, 10) : (width || 460);
@@ -262,7 +276,9 @@ export const AiPanel: React.FC<AiPanelProps> = ({
 
     try {
       const context = activeTab ? {
-        code: activeTab.content,
+        code: activeCodeSelection ? activeCodeSelection : activeTab.content,
+        selection: activeCodeSelection || undefined,
+        fullCode: activeCodeSelection ? activeTab.content : undefined,
         filename: activeTab.name,
         language: activeTab.language
       } : undefined;
@@ -548,7 +564,15 @@ export const AiPanel: React.FC<AiPanelProps> = ({
                 <span>Объяснить</span>
               </button>
               <button
-                onClick={() => handleSendMessage('Проанализируй код в файле и найди потенциальные ошибки, баги или утечки.')}
+                onClick={() => handleSendMessage(activeCodeSelection ? 'Объясни выделенный фрагмент кода и как он работает.' : 'Объясни структуру и логику этого файла.')}
+                disabled={!activeTab || isLoading}
+                className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] shrink-0 transition disabled:opacity-40"
+              >
+                <Code2 className="w-3 h-3 text-emerald-400" />
+                <span>Объяснить</span>
+              </button>
+              <button
+                onClick={() => handleSendMessage(activeCodeSelection ? 'Проанализируй выделенный фрагмент кода и найди потенциальные ошибки, баги или утечки.' : 'Проанализируй код в файле и найди потенциальные ошибки, баги или утечки.')}
                 disabled={!activeTab || isLoading}
                 className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] shrink-0 transition disabled:opacity-40"
               >
@@ -556,7 +580,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
                 <span>Найти баги</span>
               </button>
               <button
-                onClick={() => handleSendMessage('Оптимизируй этот код для максимальной производительности и читаемости.')}
+                onClick={() => handleSendMessage(activeCodeSelection ? 'Оптимизируй выделенный фрагмент кода для максимальной производительности и читаемости.' : 'Оптимизируй этот код для максимальной производительности и читаемости.')}
                 disabled={!activeTab || isLoading}
                 className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] shrink-0 transition disabled:opacity-40"
               >
@@ -564,7 +588,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
                 <span>Оптимизировать</span>
               </button>
               <button
-                onClick={() => handleSendMessage('Напиши юнит-тесты для функций этого файла.')}
+                onClick={() => handleSendMessage(activeCodeSelection ? 'Напиши юнит-тесты для выделенного фрагмента кода.' : 'Напиши юнит-тесты для функций этого файла.')}
                 disabled={!activeTab || isLoading}
                 className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] shrink-0 transition disabled:opacity-40"
               >
@@ -607,7 +631,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
                       {isUser ? (
                         msg.content
                       ) : (
-                        <MarkdownView content={msg.content} onInsertCode={onInsertCode} />
+                        <MarkdownView content={msg.content} onInsertCode={onInsertCode} onDiffCode={onDiffCode} />
                       )}
                     </div>
                   </div>
@@ -633,12 +657,17 @@ export const AiPanel: React.FC<AiPanelProps> = ({
 
             {/* Input Bar */}
             <div className="p-2.5 border-t border-[var(--border-subtle)] bg-[var(--bg-sidebar)] shrink-0">
-              {activeTab && (
+              {activeCodeSelection ? (
+                <div className="flex items-center space-x-1.5 mb-1.5 text-[10px] text-[var(--accent-color)] px-1.5 py-0.5 rounded bg-[var(--accent-subtle)] truncate">
+                  <Code2 className="w-3 h-3 text-[var(--accent-color)] shrink-0" />
+                  <span className="truncate">Выделено строк: {activeCodeSelection.split('\n').length} (в приоритете контекста)</span>
+                </div>
+              ) : activeTab ? (
                 <div className="flex items-center space-x-1.5 mb-1.5 text-[10px] text-[var(--text-secondary)] px-1 truncate">
                   <FileCode className="w-3 h-3 text-emerald-400 shrink-0" />
                   <span className="truncate">Контекст: {activeTab.name}</span>
                 </div>
-              )}
+              ) : null}
 
               <div className="flex items-end space-x-1.5 bg-[var(--bg-primary)] border border-[var(--border-subtle)] focus-within:border-[var(--accent-color)] rounded-xl p-1.5 transition">
                 <textarea

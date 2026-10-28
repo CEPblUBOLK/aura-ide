@@ -9,6 +9,7 @@ import path from 'path';
 import { spawn, exec, execFile, execSync } from 'child_process';
 import { promisify } from 'util';
 import pty from 'node-pty';
+import chokidar from 'chokidar';
 
 const execAsync = promisify(exec);
 const execFileAsync = promisify(execFile);
@@ -16,6 +17,51 @@ const app = express();
 const server = http.createServer(app);
 const wss = new WebSocketServer({ noServer: true });
 const runnerWss = new WebSocketServer({ noServer: true });
+const eventsWss = new WebSocketServer({ noServer: true });
+
+let workspaceWatcher = null;
+
+function broadcastFsEvent(type, eventPath) {
+  const message = JSON.stringify({ type: 'fs-changed', event: type, path: eventPath });
+  for (const client of eventsWss.clients) {
+    if (client.readyState === WebSocket.OPEN) {
+      client.send(message);
+    }
+  }
+}
+
+function startWorkspaceWatcher(targetPath) {
+  if (workspaceWatcher) {
+    try { workspaceWatcher.close(); } catch {}
+    workspaceWatcher = null;
+  }
+  try {
+    workspaceWatcher = chokidar.watch(targetPath, {
+      ignored: [
+        '**/node_modules/**',
+        '**/.git/**',
+        '**/.venv/**',
+        '**/dist/**',
+        '**/*.WebView2/**',
+        '**/__pycache__/**',
+      ],
+      persistent: true,
+      ignoreInitial: true,
+      depth: 6,
+      awaitWriteFinish: {
+        stabilityThreshold: 250,
+        pollInterval: 80
+      }
+    });
+
+    workspaceWatcher.on('all', (event, filePath) => {
+      const rel = path.relative(targetPath, filePath);
+      broadcastFsEvent(event, rel);
+    });
+  } catch (err) {
+    console.error('[Chokidar] Watcher failed to start:', err.message);
+  }
+}
 
 const PORT = process.env.PORT || 3001;
 // Default workspace to the parent directory or aura-ide
@@ -70,6 +116,7 @@ app.post('/api/workspace', async (req, res) => {
       return res.status(400).json({ error: 'Not a directory' });
     }
     currentWorkspace = path.resolve(newPath);
+    startWorkspaceWatcher(currentWorkspace);
     res.json({ workspace: currentWorkspace, name: path.basename(currentWorkspace) });
   } catch (err) {
     res.status(400).json({ error: err.message });
@@ -244,7 +291,18 @@ app.post('/api/rename', async (req, res) => {
 // 4. Search API (Quick Search across files)
 app.get('/api/search', async (req, res) => {
   const query = req.query.query;
-  if (!query || query.length < 2) return res.json({ results: [] });
+  const matchCase = req.query.matchCase === 'true';
+  const isRegex = req.query.isRegex === 'true';
+  if (!query || query.length < 1) return res.json({ results: [] });
+
+  let regex = null;
+  if (isRegex) {
+    try {
+      regex = new RegExp(query, matchCase ? '' : 'i');
+    } catch {
+      return res.json({ results: [] });
+    }
+  }
 
   const results = [];
   const maxResults = 100;
@@ -255,7 +313,7 @@ app.get('/api/search', async (req, res) => {
       const entries = await fs.readdir(dir, { withFileTypes: true });
       for (const entry of entries) {
         if (results.length >= maxResults) break;
-        if (['node_modules', '.git', 'dist', 'build'].includes(entry.name)) continue;
+        if (['node_modules', '.git', 'dist', 'build', '.venv', 'AuraIDE.exe.WebView2'].includes(entry.name)) continue;
 
         const fullPath = path.join(dir, entry.name);
         if (entry.isDirectory()) {
@@ -263,7 +321,7 @@ app.get('/api/search', async (req, res) => {
         } else {
           // Check extension
           const ext = path.extname(entry.name).toLowerCase();
-          if (['.png', '.jpg', '.jpeg', '.gif', '.ico', '.exe', '.dll', '.bin', '.lock'].includes(ext)) continue;
+          if (['.png', '.jpg', '.jpeg', '.gif', '.ico', '.exe', '.dll', '.bin', '.lock', '.zip'].includes(ext)) continue;
 
           try {
             const content = await fs.readFile(fullPath, 'utf-8');
@@ -271,7 +329,8 @@ app.get('/api/search', async (req, res) => {
             for (let i = 0; i < lines.length; i++) {
               if (results.length >= maxResults) break;
               const line = lines[i];
-              if (line.toLowerCase().includes(query.toLowerCase())) {
+              const isMatch = regex ? regex.test(line) : (matchCase ? line.includes(query) : line.toLowerCase().includes(query.toLowerCase()));
+              if (isMatch) {
                 results.push({
                   file: fullPath,
                   relativePath: path.relative(currentWorkspace, fullPath).replace(/\\/g, '/'),
@@ -378,6 +437,67 @@ app.post('/api/git/commit', async (req, res) => {
   try {
     await execFileAsync('git', ['add', '-A'], { cwd: currentWorkspace });
     const { stdout } = await execFileAsync('git', ['commit', '-m', message.trim()], { cwd: currentWorkspace });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/stage', async (req, res) => {
+  const { file } = req.body;
+  if (!file) return res.status(400).json({ error: 'File is required' });
+  try {
+    await execFileAsync('git', ['add', '--', file], { cwd: currentWorkspace });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/unstage', async (req, res) => {
+  const { file } = req.body;
+  if (!file) return res.status(400).json({ error: 'File is required' });
+  try {
+    await execFileAsync('git', ['restore', '--staged', '--', file], { cwd: currentWorkspace });
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/discard', async (req, res) => {
+  const { file, status } = req.body;
+  if (!file) return res.status(400).json({ error: 'File is required' });
+  try {
+    if (status === 'untracked') {
+      const fullPath = path.join(currentWorkspace, file);
+      const stat = await fs.stat(fullPath);
+      if (stat.isDirectory()) {
+        await fs.rm(fullPath, { recursive: true, force: true });
+      } else {
+        await fs.unlink(fullPath);
+      }
+    } else {
+      await execFileAsync('git', ['restore', '--', file], { cwd: currentWorkspace });
+    }
+    res.json({ success: true });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/push', async (req, res) => {
+  try {
+    const { stdout } = await execAsync('git push', { cwd: currentWorkspace });
+    res.json({ success: true, output: stdout });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
+app.post('/api/git/pull', async (req, res) => {
+  try {
+    const { stdout } = await execAsync('git pull', { cwd: currentWorkspace });
     res.json({ success: true, output: stdout });
   } catch (err) {
     res.status(500).json({ error: err.message });
@@ -1923,7 +2043,7 @@ runnerWss.on('connection', (ws) => {
   });
 });
 
-// HTTP Upgrade routing for WebSocket endpoints: /terminal and /runner
+// HTTP Upgrade routing for WebSocket endpoints: /terminal, /runner and /events
 server.on('upgrade', (request, socket, head) => {
   try {
     const pathname = new URL(request.url, `http://${request.headers.host || 'localhost'}`).pathname;
@@ -1934,6 +2054,10 @@ server.on('upgrade', (request, socket, head) => {
     } else if (pathname === '/runner') {
       runnerWss.handleUpgrade(request, socket, head, (ws) => {
         runnerWss.emit('connection', ws, request);
+      });
+    } else if (pathname === '/events') {
+      eventsWss.handleUpgrade(request, socket, head, (ws) => {
+        eventsWss.emit('connection', ws, request);
       });
     } else {
       socket.destroy();
@@ -1948,7 +2072,7 @@ const distPath = path.join(process.cwd(), 'dist');
 if (fsSync.existsSync(distPath)) {
   app.use(express.static(distPath));
   app.get('*', (req, res, next) => {
-    if (req.path.startsWith('/api') || req.path.startsWith('/terminal') || req.path.startsWith('/preview') || req.path.startsWith('/proxy')) return next();
+    if (req.path.startsWith('/api') || req.path.startsWith('/terminal') || req.path.startsWith('/events') || req.path.startsWith('/preview') || req.path.startsWith('/proxy')) return next();
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
@@ -1956,4 +2080,5 @@ if (fsSync.existsSync(distPath)) {
 server.listen(PORT, () => {
   console.log(`[Aura IDE Backend] Running on http://localhost:${PORT}`);
   console.log(`[Aura IDE Backend] Active workspace: ${currentWorkspace}`);
+  startWorkspaceWatcher(currentWorkspace);
 });

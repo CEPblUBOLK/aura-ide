@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { TitleBar } from './components/TitleBar';
 import { Sidebar } from './components/Sidebar';
 import { EditorArea } from './components/EditorArea';
@@ -78,8 +78,10 @@ export const App: React.FC = () => {
   const [isZenMode, setIsZenMode] = useState(false);
   const [isScratchpadOpen, setIsScratchpadOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
-  const [aiService, setAiService] = useState<'google' | 'deepseek'>('google');
+  const [aiService, setAiService] = useState<'gemini' | 'google' | 'deepseek'>('gemini');
   const [activeCodeSelection, setActiveCodeSelection] = useState('');
+  const [targetLocation, setTargetLocation] = useState<{ line: number; col?: number; timestamp: number } | null>(null);
+  const [insertCodeAction, setInsertCodeAction] = useState<{ code: string; timestamp: number } | null>(null);
   const [isSaveAsOpen, setIsSaveAsOpen] = useState(false);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
@@ -119,10 +121,75 @@ export const App: React.FC = () => {
       loadGitStatus();
       loadPythonEnvs();
       loadRustStatus();
+      restoreSession(data.workspace);
     } catch (err) {
       console.error('Failed to load workspace', err);
     }
   };
+
+  // Save workspace session to localStorage
+  useEffect(() => {
+    if (!workspacePath) return;
+    const sessionKey = `aura_session_${workspacePath}`;
+    const sessionData = {
+      openTabs: tabs.filter(t => !t.isDiff).map(t => ({
+        path: t.path,
+        name: t.name,
+        relativePath: t.relativePath
+      })),
+      activeTabId,
+      splitTabId,
+      isSplit,
+    };
+    try {
+      localStorage.setItem(sessionKey, JSON.stringify(sessionData));
+    } catch {}
+  }, [workspacePath, tabs, activeTabId, splitTabId, isSplit]);
+
+  const restoreSession = async (wsPath: string) => {
+    try {
+      const saved = localStorage.getItem(`aura_session_${wsPath}`);
+      if (!saved) return;
+      const data = JSON.parse(saved);
+      if (Array.isArray(data.openTabs) && data.openTabs.length > 0) {
+        for (const item of data.openTabs) {
+          await openFileByPath(item.path);
+        }
+      }
+      if (data.isSplit) setIsSplit(true);
+      if (data.splitTabId) setSplitTabId(data.splitTabId);
+    } catch {}
+  };
+
+  // Real-time backend file watcher listener
+  useEffect(() => {
+    const isHttps = window.location.protocol === 'https:';
+    const wsProto = isHttps ? 'wss:' : 'ws:';
+    const wsUrl = `${wsProto}//${window.location.host}/events`;
+    let ws: WebSocket | null = null;
+    let timer: any = null;
+
+    try {
+      ws = new WebSocket(wsUrl);
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data.type === 'fs-changed') {
+            clearTimeout(timer);
+            timer = setTimeout(() => {
+              loadTree();
+              loadGitStatus();
+            }, 300);
+          }
+        } catch {}
+      };
+    } catch {}
+
+    return () => {
+      clearTimeout(timer);
+      try { ws?.close(); } catch {}
+    };
+  }, []);
 
   const loadTree = async () => {
     try {
@@ -379,6 +446,9 @@ export const App: React.FC = () => {
     const existing = tabs.find(t => t.path === node.path && !t.isDiff);
     if (existing) {
       setActiveTabId(existing.id);
+      if (lineToJump) {
+        setTargetLocation({ line: lineToJump, timestamp: Date.now() });
+      }
       return;
     }
 
@@ -409,6 +479,9 @@ export const App: React.FC = () => {
 
       setTabs(prev => [...prev, newTab]);
       setActiveTabId(newTab.id);
+      if (lineToJump) {
+        setTargetLocation({ line: lineToJump, timestamp: Date.now() });
+      }
     } catch (err) {
       alert('Failed to read file: ' + (err as Error).message);
     }
@@ -574,7 +647,7 @@ export const App: React.FC = () => {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ path: targetPath }),
     });
-    setTabs(prev => prev.filter(t => t.path !== targetPath));
+    setTabs(prev => prev.filter(t => t.path !== targetPath && !t.path.startsWith(targetPath + '/') && !t.path.startsWith(targetPath + '\\')));
     await loadTree();
     await loadGitStatus();
   };
@@ -587,11 +660,87 @@ export const App: React.FC = () => {
     });
     setTabs(prev => prev.map(t => {
       if (t.path === oldPath) {
-        return { ...t, path: newPath, name: newPath.split(/[/\\]/).pop() || t.name };
+        return { ...t, path: newPath, relativePath: newPath, name: newPath.split(/[/\\]/).pop() || t.name };
+      }
+      if (t.path.startsWith(oldPath + '/') || t.path.startsWith(oldPath + '\\')) {
+        const sub = t.path.slice(oldPath.length);
+        const updatedPath = newPath + sub;
+        const relSub = t.relativePath.slice(oldPath.length);
+        const updatedRel = newPath + relSub;
+        return { ...t, path: updatedPath, relativePath: updatedRel, name: updatedPath.split(/[/\\]/).pop() || t.name };
       }
       return t;
     }));
     await loadTree();
+  };
+
+  const handleStageFile = async (file: string) => {
+    await fetch('/api/git/stage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file })
+    });
+    await loadGitStatus();
+  };
+
+  const handleUnstageFile = async (file: string) => {
+    await fetch('/api/git/unstage', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file })
+    });
+    await loadGitStatus();
+  };
+
+  const handleDiscardFile = async (file: string, status: string) => {
+    await fetch('/api/git/discard', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ file, status })
+    });
+    await loadGitStatus();
+  };
+
+  const handleGitPush = async () => {
+    const res = await fetch('/api/git/push', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    showToast('Git Push выполнен успешно');
+  };
+
+  const handleGitPull = async () => {
+    const res = await fetch('/api/git/pull', { method: 'POST' });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error);
+    await loadTree();
+    await loadGitStatus();
+    showToast('Git Pull выполнен успешно');
+  };
+
+  const handleOpenAiDiffTab = (suggestedCode: string) => {
+    const currentTab = tabs.find(t => t.id === activeTabId);
+    if (!currentTab) return;
+
+    const diffTabId = `ai-diff-${currentTab.id}`;
+    const newTab: OpenTab = {
+      id: diffTabId,
+      name: `AI Diff: ${currentTab.name}`,
+      path: currentTab.path,
+      relativePath: currentTab.relativePath,
+      content: suggestedCode,
+      initialContent: currentTab.content,
+      isDirty: false,
+      language: currentTab.language,
+      isDiff: true,
+      originalContent: currentTab.content,
+    };
+
+    setTabs(prev => {
+      const filtered = prev.filter(t => t.id !== diffTabId);
+      return [...filtered, newTab];
+    });
+    setActiveTabId(diffTabId);
+    showToast('Открыт режим сравнения с кодом ИИ');
   };
 
   const handleCommitGit = async (message: string) => {
@@ -690,12 +839,37 @@ export const App: React.FC = () => {
     setIsAiOpen(prev => !prev);
   };
 
-  // Keyboard shortcut listener
+  const latestStateRef = useRef({
+    isZenMode,
+    activeTabId,
+    tabs,
+    handleRunCode,
+    handleSaveFile,
+    handleCloseTab,
+    handleOpenFolderPicker,
+    handleCreateFile,
+  });
+
+  useEffect(() => {
+    latestStateRef.current = {
+      isZenMode,
+      activeTabId,
+      tabs,
+      handleRunCode,
+      handleSaveFile,
+      handleCloseTab,
+      handleOpenFolderPicker,
+      handleCreateFile,
+    };
+  });
+
+  // Keyboard shortcut listener (immune to stale closures via latestStateRef)
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       const isMod = e.metaKey || e.ctrlKey;
+      const state = latestStateRef.current;
 
-      if (e.key === 'Escape' && isZenMode) {
+      if (e.key === 'Escape' && state.isZenMode) {
         setIsZenMode(false);
       } else if (isMod && e.shiftKey && e.key.toLowerCase() === 'a') {
         e.preventDefault();
@@ -708,10 +882,10 @@ export const App: React.FC = () => {
         setIsScratchpadOpen(prev => !prev);
       } else if (isMod && !e.shiftKey && e.key.toLowerCase() === 'n') {
         e.preventDefault();
-        handleCreateFile('', 'untitled.txt');
+        state.handleCreateFile('', 'untitled.txt');
       } else if (isMod && e.key.toLowerCase() === 'o') {
         e.preventDefault();
-        handleOpenFolderPicker();
+        state.handleOpenFolderPicker();
       } else if (e.key === 'F11') {
         e.preventDefault();
         if ((window as any).chrome?.webview?.postMessage) {
@@ -725,10 +899,10 @@ export const App: React.FC = () => {
         }
       } else if (e.key === 'F5' || (isMod && e.key === 'F5')) {
         e.preventDefault();
-        handleRunCode();
+        state.handleRunCode();
       } else if (isMod && e.key.toLowerCase() === 's') {
         e.preventDefault();
-        if (activeTabId) handleSaveFile(activeTabId);
+        if (state.activeTabId) state.handleSaveFile(state.activeTabId);
       } else if (isMod && e.key.toLowerCase() === 'p') {
         e.preventDefault();
         setIsCommandPaletteOpen(prev => !prev);
@@ -740,13 +914,13 @@ export const App: React.FC = () => {
         setIsTerminalOpen(prev => !prev);
       } else if (isMod && e.key.toLowerCase() === 'w') {
         e.preventDefault();
-        if (activeTabId) handleCloseTab(activeTabId);
+        if (state.activeTabId) state.handleCloseTab(state.activeTabId);
       }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [activeTabId, tabs]);
+  }, []);
 
   // Sidebar drag resizer effect
   useEffect(() => {
@@ -832,6 +1006,11 @@ export const App: React.FC = () => {
               onRefreshFiles={loadTree}
               onRefreshGit={loadGitStatus}
               onCommitGit={handleCommitGit}
+              onStageFile={handleStageFile}
+              onUnstageFile={handleUnstageFile}
+              onDiscardFile={handleDiscardFile}
+              onGitPush={handleGitPush}
+              onGitPull={handleGitPull}
               onCreateFile={handleCreateFile}
               onCreateFolder={handleCreateFolder}
               onDeleteItem={handleDeleteItem}
@@ -859,6 +1038,7 @@ export const App: React.FC = () => {
               settings={settings}
               projectName={workspaceName}
               onSelectTab={setActiveTabId}
+              onSelectSplitTab={setSplitTabId}
               onCloseTab={handleCloseTab}
               onContentChange={handleContentChange}
               onSaveFile={handleSaveFile}
@@ -868,6 +1048,8 @@ export const App: React.FC = () => {
               onNewFilePrompt={() => handleCreateFile('', 'untitled.txt')}
               onCursorChange={(line, col) => setCursorPos({ line, col })}
               onSelectionChange={setActiveCodeSelection}
+              targetLocation={targetLocation}
+              insertCodeAction={insertCodeAction}
             />
 
             {isPreviewOpen && (
@@ -887,6 +1069,7 @@ export const App: React.FC = () => {
             pendingCommand={pendingCommand}
             onCommandExecuted={handleCommandExecuted}
             theme={settings.theme}
+            onOpenFileByPath={openFileByPath}
           />
         </div>
 
@@ -895,12 +1078,14 @@ export const App: React.FC = () => {
           isOpen={isAiOpen}
           onClose={() => setIsAiOpen(false)}
           activeTab={activeTab ? { name: activeTab.name, language: activeTab.language, content: activeTab.content } : null}
+          activeCodeSelection={activeCodeSelection}
+          service={aiService}
+          onServiceChange={(s) => setAiService(s)}
           onInsertCode={(codeToInsert) => {
-            if (activeTab) {
-              handleContentChange(activeTab.id, activeTab.content + (activeTab.content.endsWith('\n') ? '' : '\n') + codeToInsert + '\n');
-              showToast('Код вставлен в редактор!');
-            }
+            setInsertCodeAction({ code: codeToInsert, timestamp: Date.now() });
+            showToast('Код вставлен в позицию курсора!');
           }}
+          onDiffCode={handleOpenAiDiffTab}
         />
       </div>
 

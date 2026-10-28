@@ -1,12 +1,13 @@
 import React, { useState } from 'react';
-import { Copy, Check, Code2 } from 'lucide-react';
+import { Copy, Check, Code2, GitCompare } from 'lucide-react';
 
 interface MarkdownViewProps {
   content: string;
   onInsertCode?: (code: string) => void;
+  onDiffCode?: (code: string) => void;
 }
 
-export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, onInsertCode }) => {
+export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, onInsertCode, onDiffCode }) => {
   const [copiedIndex, setCopiedIndex] = useState<number | null>(null);
 
   const handleCopy = (code: string, idx: number) => {
@@ -58,7 +59,7 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, onInsertCod
       // `code` -> inline code pill
       if (part.startsWith('`') && part.endsWith('`') && part.length >= 2) {
         return (
-          <code key={key} className="px-1.5 py-0.5 mx-0.5 rounded bg-[var(--bg-hover)] border border-[var(--border-subtle)] font-mono text-[11px] text-emerald-400">
+          <code key={key} className="px-1.5 py-0.5 mx-0.5 rounded bg-[var(--bg-hover)] border border-[var(--border-subtle)] font-mono text-[11px] text-emerald-600 dark:text-emerald-400">
             {part.slice(1, -1)}
           </code>
         );
@@ -223,10 +224,21 @@ export const MarkdownView: React.FC<MarkdownViewProps> = ({ content, onInsertCod
                     <button
                       onClick={() => onInsertCode(sec.code!)}
                       className="flex items-center space-x-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-emerald-400 hover:text-emerald-300 transition text-[11px]"
-                      title="Вставить в открытый файл"
+                      title="Вставить в позицию курсора"
                     >
                       <Code2 className="w-3 h-3" />
-                      <span>Вставить в файл</span>
+                      <span>Вставить</span>
+                    </button>
+                  )}
+
+                  {onDiffCode && (
+                    <button
+                      onClick={() => onDiffCode(sec.code!)}
+                      className="flex items-center space-x-1 px-2 py-0.5 rounded hover:bg-zinc-800 text-cyan-400 hover:text-cyan-300 transition text-[11px]"
+                      title="Сравнить изменения с текущим файлом"
+                    >
+                      <GitCompare className="w-3 h-3" />
+                      <span>Diff</span>
                     </button>
                   )}
                 </div>

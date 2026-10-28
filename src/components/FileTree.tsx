@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useRef } from 'react';
 import { 
   ChevronRight, 
   ChevronDown, 
@@ -62,20 +62,32 @@ export const FileTree: React.FC<FileTreeProps> = ({
     }
   };
 
+  const isSubmittingRef = useRef(false);
+
   const submitCreate = async () => {
+    if (isSubmittingRef.current) return;
     if (!newItemName.trim() || !creatingType) {
       setCreatingType(null);
+      setNewItemName('');
       return;
     }
+    isSubmittingRef.current = true;
     const targetDir = creatingInPath;
     const name = newItemName.trim();
-    if (creatingType === 'file') {
-      await onCreateFile(targetDir, name);
-    } else {
-      await onCreateFolder(targetDir, name);
-    }
+    const typeToCreate = creatingType;
+
     setCreatingType(null);
     setNewItemName('');
+
+    try {
+      if (typeToCreate === 'file') {
+        await onCreateFile(targetDir, name);
+      } else {
+        await onCreateFolder(targetDir, name);
+      }
+    } finally {
+      isSubmittingRef.current = false;
+    }
   };
 
   const startRename = (node: FileNode, e: React.MouseEvent) => {
@@ -211,8 +223,14 @@ export const FileTree: React.FC<FileTreeProps> = ({
               value={newItemName}
               onChange={(e) => setNewItemName(e.target.value)}
               onKeyDown={(e) => {
-                if (e.key === 'Enter') submitCreate();
-                if (e.key === 'Escape') setCreatingType(null);
+                if (e.key === 'Enter') {
+                  e.preventDefault();
+                  submitCreate();
+                } else if (e.key === 'Escape') {
+                  e.preventDefault();
+                  setNewItemName('');
+                  setCreatingType(null);
+                }
               }}
               onBlur={submitCreate}
               className="bg-[var(--bg-primary)] border border-[var(--accent-color)] rounded px-1.5 py-0.5 text-xs text-[var(--text-primary)] outline-none flex-1 min-w-0"
@@ -271,8 +289,14 @@ export const FileTree: React.FC<FileTreeProps> = ({
             value={newItemName}
             onChange={(e) => setNewItemName(e.target.value)}
             onKeyDown={(e) => {
-              if (e.key === 'Enter') submitCreate();
-              if (e.key === 'Escape') setCreatingType(null);
+              if (e.key === 'Enter') {
+                e.preventDefault();
+                submitCreate();
+              } else if (e.key === 'Escape') {
+                e.preventDefault();
+                setNewItemName('');
+                setCreatingType(null);
+              }
             }}
             onBlur={submitCreate}
             className="bg-[var(--bg-primary)] border border-[var(--accent-color)] rounded px-1.5 py-0.5 text-xs text-[var(--text-primary)] outline-none flex-1"

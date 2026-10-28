@@ -280,3 +280,12 @@
 .animate-spotlight {
   animation: fadeInScale 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
+
+/* Utilities for hiding scrollbars */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}

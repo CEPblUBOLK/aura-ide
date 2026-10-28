@@ -23,6 +23,7 @@ interface EditorAreaProps {
   settings: EditorSettings;
   projectName: string;
   onSelectTab: (id: string) => void;
+  onSelectSplitTab?: (id: string) => void;
   onCloseTab: (id: string, e: React.MouseEvent) => void;
   onContentChange: (id: string, newContent: string) => void;
   onSaveFile: (id: string) => Promise<void>;
@@ -32,6 +33,8 @@ interface EditorAreaProps {
   onNewFilePrompt: () => void;
   onCursorChange?: (line: number, col: number) => void;
   onSelectionChange?: (selectedText: string) => void;
+  targetLocation?: { line: number; col?: number; timestamp: number } | null;
+  insertCodeAction?: { code: string; timestamp: number } | null;
 }
 
 export const registerMonacoThemes = (monaco: any) => {
@@ -320,6 +323,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   settings,
   projectName,
   onSelectTab,
+  onSelectSplitTab,
   onCloseTab,
   onContentChange,
   onSaveFile,
@@ -329,15 +333,41 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   onNewFilePrompt,
   onCursorChange,
   onSelectionChange,
+  targetLocation,
+  insertCodeAction,
 }) => {
   const monacoRef = useRef<any>(null);
+  const editorRef = useRef<any>(null);
   const activeTabIdRef = useRef(activeTabId);
   const activeTab = tabs.find(t => t.id === activeTabId);
-  const splitTab = tabs.find(t => t.id === splitTabId) || tabs.find(t => t.id !== activeTabId) || activeTab;
+  const splitTab = splitTabId ? tabs.find(t => t.id === splitTabId) : tabs.find(t => t.id !== activeTabId);
 
   useEffect(() => {
     activeTabIdRef.current = activeTabId;
   }, [activeTabId]);
+
+  // Handle jump to specific line
+  useEffect(() => {
+    if (targetLocation && editorRef.current) {
+      editorRef.current.revealLineInCenter(targetLocation.line);
+      editorRef.current.setPosition({ lineNumber: targetLocation.line, column: targetLocation.col || 1 });
+      editorRef.current.focus();
+    }
+  }, [targetLocation]);
+
+  // Handle code insertion at current cursor position
+  useEffect(() => {
+    if (insertCodeAction && editorRef.current && monacoRef.current) {
+      const editor = editorRef.current;
+      const selection = editor.getSelection();
+      const pos = editor.getPosition();
+      const range = selection && !selection.isEmpty()
+        ? selection
+        : (pos ? new monacoRef.current.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column) : new monacoRef.current.Range(1, 1, 1, 1));
+      editor.executeEdits('ai-insert', [{ range, text: insertCodeAction.code, forceMoveMarkers: true }]);
+      editor.focus();
+    }
+  }, [insertCodeAction]);
 
   // Dynamically ensure Monaco applies the theme when settings.theme changes
   useEffect(() => {
@@ -348,21 +378,24 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
     }
   }, [settings.theme]);
 
-  const handleEditorDidMount = (editor: any, monaco: any) => {
+  const handleEditorDidMount = (editor: any, monaco: any, isSecondary: boolean = false) => {
+    if (!isSecondary) {
+      editorRef.current = editor;
+    }
     monacoRef.current = monaco;
     registerMonacoThemes(monaco);
     monaco.editor.setTheme(settings.theme);
 
     // Track cursor movements for line/column counter in status bar
     editor.onDidChangeCursorPosition((e: any) => {
-      if (onCursorChange) {
+      if (onCursorChange && !isSecondary) {
         onCursorChange(e.position.lineNumber, e.position.column);
       }
     });
 
     // Track editor selection for AI Copilot quick actions (Explain, Bugs, Optimize, Tests)
     editor.onDidChangeCursorSelection(() => {
-      if (onSelectionChange) {
+      if (onSelectionChange && !isSecondary) {
         const selection = editor.getSelection();
         const model = editor.getModel();
         if (selection && model && !selection.isEmpty()) {
@@ -374,7 +407,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
       }
     });
 
-    // Add custom VS Code commands using activeTabIdRef to prevent stale closure
+    // Alt + \ to manually trigger AI Inline Copilot Completion
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Backslash, () => {
       editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {});
     });
@@ -383,10 +416,6 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => {
       onOpenCommandPalette();
-    });
-    // Alt + \ to manually trigger AI Inline Copilot Completion
-    editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Backslash, () => {
-      editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {});
     });
   };
 
@@ -498,7 +527,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
             beforeMount={registerMonacoThemes}
             theme={settings.theme}
             onChange={(val) => onContentChange(tab.id, val || '')}
-            onMount={handleEditorDidMount}
+            onMount={(ed, m) => handleEditorDidMount(ed, m, isSecondary)}
             options={{
               fontSize: settings.fontSize,
               fontFamily: settings.fontFamily,
@@ -619,8 +648,35 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
         {renderSingleEditor(activeTab)}
 
         {isSplit && (
-          <div className="flex-1 flex border-l border-[var(--border-subtle)]">
-            {renderSingleEditor(splitTab, true)}
+          <div className="flex-1 flex flex-col border-l border-[var(--border-subtle)] min-w-0">
+            {/* Secondary Split Tab Bar */}
+            <div className="h-9 w-full flex items-center px-2 space-x-1 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] overflow-x-auto select-none no-scrollbar">
+              {tabs.map((tab) => {
+                const isActive = tab.id === splitTab?.id;
+                return (
+                  <div
+                    key={`split-${tab.id}`}
+                    onClick={() => onSelectSplitTab?.(tab.id)}
+                    className={`group flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs cursor-pointer transition-all border shrink-0 ${
+                      isActive
+                        ? 'bg-[var(--bg-secondary)] text-[var(--accent-color)] font-medium border-[var(--border-subtle)] shadow-sm'
+                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] border-transparent'
+                    }`}
+                  >
+                    {getFileIcon(tab.name, false)}
+                    <span className="truncate max-w-[100px]">{tab.name}</span>
+                  </div>
+                );
+              })}
+            </div>
+            {splitTab && splitTab.id !== activeTab?.id ? (
+              renderSingleEditor(splitTab, true)
+            ) : (
+              <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-xs text-[var(--text-secondary)] select-none">
+                <Code2 className="w-8 h-8 text-[var(--accent-color)] mb-2 opacity-50" />
+                <span>Выберите другой файл сверху для раздельного просмотра</span>
+              </div>
+            )}
           </div>
         )}
       </div>

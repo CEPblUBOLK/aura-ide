@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Files, 
   Search, 
@@ -14,7 +14,13 @@ import {
   Type,
   Layout,
   Volume2,
-  StickyNote
+  StickyNote,
+  Plus,
+  Minus,
+  RotateCcw,
+  ArrowUp,
+  ArrowDown,
+  RefreshCw
 } from 'lucide-react';
 import { FileNode, GitFile, SearchResult, EditorSettings, ThemeMode } from '../types';
 import { FileTree } from './FileTree';
@@ -37,6 +43,11 @@ interface SidebarProps {
   onRefreshFiles: () => void;
   onRefreshGit: () => void;
   onCommitGit: (message: string) => Promise<void>;
+  onStageFile?: (file: string) => Promise<void>;
+  onUnstageFile?: (file: string) => Promise<void>;
+  onDiscardFile?: (file: string, status: string) => Promise<void>;
+  onGitPush?: () => Promise<void>;
+  onGitPull?: () => Promise<void>;
   onCreateFile: (parentDir: string, name: string) => Promise<void>;
   onCreateFolder: (parentDir: string, name: string) => Promise<void>;
   onDeleteItem: (path: string) => Promise<void>;
@@ -60,6 +71,11 @@ export const Sidebar: React.FC<SidebarProps> = ({
   onRefreshFiles,
   onRefreshGit,
   onCommitGit,
+  onStageFile,
+  onUnstageFile,
+  onDiscardFile,
+  onGitPush,
+  onGitPull,
   onCreateFile,
   onCreateFolder,
   onDeleteItem,
@@ -69,15 +85,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
   const [isSearching, setIsSearching] = useState(false);
+  const [matchCase, setMatchCase] = useState(false);
+  const [useRegex, setUseRegex] = useState(false);
   const [commitMessage, setCommitMessage] = useState('');
   const [isCommitting, setIsCommitting] = useState(false);
+  const [isSyncingGit, setIsSyncingGit] = useState(false);
+
+  useEffect(() => {
+    if (!searchQuery.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setIsSearching(true);
+      try {
+        const res = await fetch(`/api/search?query=${encodeURIComponent(searchQuery)}&matchCase=${matchCase}&isRegex=${useRegex}`);
+        const data = await res.json();
+        setSearchResults(data.results || []);
+      } catch (err) {
+        console.error('Search failed', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 300);
+    return () => clearTimeout(timer);
+  }, [searchQuery, matchCase, useRegex]);
 
   const handleSearch = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!searchQuery.trim()) return;
     setIsSearching(true);
     try {
-      const res = await fetch(`/api/search?query=${encodeURIComponent(searchQuery)}`);
+      const res = await fetch(`/api/search?query=${encodeURIComponent(searchQuery)}&matchCase=${matchCase}&isRegex=${useRegex}`);
       const data = await res.json();
       setSearchResults(data.results || []);
     } catch (err) {
@@ -213,27 +252,38 @@ export const Sidebar: React.FC<SidebarProps> = ({
               Search Workspace
             </div>
             <form onSubmit={handleSearch} className="space-y-2">
-              <div className="relative">
+              <div className="relative flex items-center">
                 <input
                   type="text"
                   placeholder="Search in all files..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="w-full bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-lg px-2.5 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] outline-none focus:border-[var(--accent-color)] transition-colors"
+                  className="w-full bg-[var(--bg-primary)] border border-[var(--border-subtle)] rounded-lg pl-2.5 pr-14 py-1.5 text-xs text-[var(--text-primary)] placeholder-[var(--text-secondary)] outline-none focus:border-[var(--accent-color)] transition-colors"
                 />
+                <div className="absolute right-1.5 flex items-center space-x-1">
+                  <button
+                    type="button"
+                    onClick={() => setMatchCase(prev => !prev)}
+                    title="Match Case"
+                    className={`px-1 py-0.5 rounded text-[10px] font-mono transition ${matchCase ? 'bg-[var(--accent-color)] text-[var(--accent-text)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'}`}
+                  >
+                    Aa
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setUseRegex(prev => !prev)}
+                    title="Use Regular Expression"
+                    className={`px-1 py-0.5 rounded text-[10px] font-mono transition ${useRegex ? 'bg-[var(--accent-color)] text-[var(--accent-text)]' : 'text-[var(--text-secondary)] hover:bg-[var(--bg-hover)]'}`}
+                  >
+                    .*
+                  </button>
+                </div>
               </div>
-              <button
-                type="submit"
-                disabled={isSearching}
-                className="w-full py-1.5 px-3 bg-[var(--accent-color)] hover:brightness-110 disabled:opacity-50 text-[var(--accent-text)] font-semibold rounded-md text-xs transition-colors shadow-sm"
-              >
-                {isSearching ? 'Searching...' : 'Find Matches'}
-              </button>
             </form>
 
             <div className="flex-1 overflow-y-auto space-y-2 pt-2">
               <div className="text-[10px] text-[var(--text-secondary)] font-medium">
-                {searchResults.length} results found
+                {isSearching ? 'Searching...' : `${searchResults.length} results found`}
               </div>
               {searchResults.map((res, idx) => (
                 <div
@@ -263,9 +313,42 @@ export const Sidebar: React.FC<SidebarProps> = ({
                 Source Control
               </div>
               {isGitRepo && (
-                <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-[var(--accent-subtle)] text-[var(--accent-color)] border border-[var(--border-subtle)] text-[10px] font-mono">
-                  <GitBranch className="w-3 h-3" />
-                  <span>{gitBranch}</span>
+                <div className="flex items-center space-x-1">
+                  <div className="flex items-center space-x-1 px-2 py-0.5 rounded-full bg-[var(--accent-subtle)] text-[var(--accent-color)] border border-[var(--border-subtle)] text-[10px] font-mono">
+                    <GitBranch className="w-3 h-3" />
+                    <span>{gitBranch}</span>
+                  </div>
+                  {onGitPull && (
+                    <button
+                      onClick={async () => {
+                        setIsSyncingGit(true);
+                        try { await onGitPull(); onRefreshGit(); } catch {} finally { setIsSyncingGit(false); }
+                      }}
+                      title="Git Pull"
+                      className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                    >
+                      <ArrowDown className={`w-3.5 h-3.5 ${isSyncingGit ? 'animate-bounce' : ''}`} />
+                    </button>
+                  )}
+                  {onGitPush && (
+                    <button
+                      onClick={async () => {
+                        setIsSyncingGit(true);
+                        try { await onGitPush(); onRefreshGit(); } catch {} finally { setIsSyncingGit(false); }
+                      }}
+                      title="Git Push"
+                      className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                    >
+                      <ArrowUp className={`w-3.5 h-3.5 ${isSyncingGit ? 'animate-bounce' : ''}`} />
+                    </button>
+                  )}
+                  <button
+                    onClick={onRefreshGit}
+                    title="Refresh Git Status"
+                    className="p-1 rounded hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] transition"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5" />
+                  </button>
                 </div>
               )}
             </div>
@@ -319,18 +402,55 @@ export const Sidebar: React.FC<SidebarProps> = ({
                         className="flex items-center justify-between p-1.5 rounded-md hover:bg-[var(--bg-hover)] cursor-pointer group text-xs text-[var(--text-primary)]"
                         title="Click to view Side-by-Side Diff"
                       >
-                        <div className="flex items-center space-x-1.5 truncate min-w-0">
+                        <div className="flex items-center space-x-1.5 truncate min-w-0 pr-1">
                           {getFileIcon(file.file, false)}
                           <span className="truncate">{file.file}</span>
                         </div>
-                        <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                          file.status === 'modified' ? 'text-amber-500 bg-amber-500/10' :
-                          file.status === 'untracked' ? 'text-green-500 bg-green-500/10' :
-                          file.status === 'added' ? 'text-blue-500 bg-blue-500/10' :
-                          'text-red-500 bg-red-500/10'
-                        }`}>
-                          {file.status[0].toUpperCase()}
-                        </span>
+                        <div className="flex items-center space-x-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                          {file.staged ? (
+                            onUnstageFile && (
+                              <button
+                                onClick={async () => { await onUnstageFile(file.file); onRefreshGit(); }}
+                                title="Unstage Changes"
+                                className="p-0.5 rounded hover:bg-[var(--bg-active)] text-[var(--text-secondary)] hover:text-amber-400 opacity-0 group-hover:opacity-100 transition"
+                              >
+                                <Minus className="w-3 h-3" />
+                              </button>
+                            )
+                          ) : (
+                            onStageFile && (
+                              <button
+                                onClick={async () => { await onStageFile(file.file); onRefreshGit(); }}
+                                title="Stage Changes"
+                                className="p-0.5 rounded hover:bg-[var(--bg-active)] text-[var(--text-secondary)] hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition"
+                              >
+                                <Plus className="w-3 h-3" />
+                              </button>
+                            )
+                          )}
+                          {onDiscardFile && (
+                            <button
+                              onClick={async () => {
+                                if (window.confirm(`Discard changes in ${file.file}?`)) {
+                                  await onDiscardFile(file.file, file.status);
+                                  onRefreshGit();
+                                }
+                              }}
+                              title="Discard Changes"
+                              className="p-0.5 rounded hover:bg-red-500/20 text-[var(--text-secondary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                          )}
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                            file.status === 'modified' ? 'text-amber-500 bg-amber-500/10' :
+                            file.status === 'untracked' ? 'text-green-500 bg-green-500/10' :
+                            file.status === 'added' ? 'text-blue-500 bg-blue-500/10' :
+                            'text-red-500 bg-red-500/10'
+                          }`}>
+                            {file.status[0].toUpperCase()}
+                          </span>
+                        </div>
                       </div>
                     ))
                   )}

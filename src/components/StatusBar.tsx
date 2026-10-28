@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { 
   GitBranch, 
   Terminal, 
@@ -42,6 +42,14 @@ export const StatusBar: React.FC<StatusBarProps> = ({
   isCopilotEnabled = true,
   onToggleCopilot,
 }) => {
+  const fileStats = useMemo(() => {
+    if (!activeTab?.content) return { lines: 0, words: 0 };
+    const content = activeTab.content;
+    const lines = content.split('\n').length;
+    const trimmed = content.trim();
+    const words = trimmed ? trimmed.split(/\s+/).length : 0;
+    return { lines, words };
+  }, [activeTab?.content]);
   return (
     <footer className="h-6 w-full flex items-center justify-between px-3 text-[11px] select-none border-t shrink-0 z-30 font-sans
       bg-[var(--bg-secondary)] border-[var(--border-subtle)] text-[var(--text-secondary)]">
@@ -106,7 +114,7 @@ export const StatusBar: React.FC<StatusBarProps> = ({
         {activeTab && (
           <>
             <span className="text-[var(--text-secondary)] hidden md:inline">
-              Lines: {activeTab.content.split('\n').length} | Words: {activeTab.content.trim() ? activeTab.content.trim().split(/\s+/).length : 0}
+              Lines: {fileStats.lines} | Words: {fileStats.words}
             </span>
             <span className="hover:text-[var(--text-primary)] cursor-pointer">
               Ln {cursorPos.line}, Col {cursorPos.col}
