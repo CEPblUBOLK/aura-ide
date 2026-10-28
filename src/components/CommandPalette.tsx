@@ -34,7 +34,7 @@ interface PaletteItem {
 
 const STATIC_COMMANDS: PaletteItem[] = [
   { id: 'toggle-ai', title: 'AI: Toggle AI Assistant Panel', category: 'AI', icon: <Bot className="w-4 h-4 text-[var(--accent-color)]" />, shortcut: 'Ctrl+Shift+A' },
-  { id: 'ai-deepseek', title: 'AI: Open DeepSeek-V3 Chat', category: 'AI', icon: <Bot className="w-4 h-4 text-sky-400" /> },
+  { id: 'ai-deepseek', title: 'AI: Open DeepSeek Flash Chat', category: 'AI', icon: <Bot className="w-4 h-4 text-sky-400" /> },
   { id: 'ai-gemini', title: 'AI: Open Gemini AI Chat', category: 'AI', icon: <Bot className="w-4 h-4 text-emerald-400" /> },
   { id: 'ai-google', title: 'AI: Ask Google AI Search (udm=50)', category: 'AI', icon: <Search className="w-4 h-4 text-blue-400" /> },
   { id: 'save-file', title: 'File: Save Active File', category: 'File', icon: <Save className="w-4 h-4 text-[var(--accent-color)]" />, shortcut: 'Ctrl+S' },

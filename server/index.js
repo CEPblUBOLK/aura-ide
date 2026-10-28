@@ -814,7 +814,7 @@ app.post('/api/ai/inline-complete', async (req, res) => {
           'Authorization': `Bearer ${deepseekApiKey}`
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           prompt: prefix ? prefix.slice(-1500) : '',
           suffix: suffix ? suffix.slice(0, 500) : '',
           max_tokens: 64,
@@ -835,7 +835,7 @@ app.post('/api/ai/inline-complete', async (req, res) => {
             }
             copilotCache.set(cacheKey, cleaned);
             console.log(`[AI Copilot] deepseek-fim (${language}) => ${JSON.stringify(cleaned)}`);
-            return res.json({ completion: cleaned, model: 'deepseek-chat' });
+            return res.json({ completion: cleaned, model: 'deepseek-flash' });
           }
         }
       }
@@ -978,7 +978,7 @@ app.post('/api/ai/chat', async (req, res) => {
           'Authorization': `Bearer ${deepseekApiKey}`
         },
         body: JSON.stringify({
-          model: 'deepseek-chat',
+          model: 'deepseek-flash',
           messages: dsMessages,
           max_tokens: 2048,
           temperature: 0.3
@@ -991,7 +991,7 @@ app.post('/api/ai/chat', async (req, res) => {
         let replyText = json.choices?.[0]?.message?.content;
         if (replyText) {
           replyText = replyText.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
-          return { reply: replyText, model: 'deepseek-chat' };
+          return { reply: replyText, model: 'deepseek-flash' };
         }
       }
     } catch (e) {

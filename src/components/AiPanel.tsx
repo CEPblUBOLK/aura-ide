@@ -98,7 +98,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
       {
         id: 'welcome',
         role: 'assistant',
-        content: 'Привет! Я встроенный ИИ-ассистент Aura IDE на базе **DeepSeek-V3** и **Gemini**.\n\nЗадай мне любой вопрос, попроси написать код, найти ошибки в текущем файле или объяснить алгоритм.',
+        content: 'Привет! Я встроенный ИИ-ассистент Aura IDE на базе **DeepSeek Flash** и **Gemini**.\n\nЗадай мне любой вопрос, попроси написать код, найти ошибки в текущем файле или объяснить алгоритм.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -196,7 +196,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
         {
           id: `welcome-${Date.now()}`,
           role: 'assistant',
-          content: 'Привет! Начат новый диалог с **DeepSeek-V3** и **Gemini**. Чем могу помочь?',
+          content: 'Привет! Начат новый диалог с **DeepSeek Flash** и **Gemini**. Чем могу помочь?',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]
@@ -407,7 +407,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
             }`}
           >
             <Bot className="w-3.5 h-3.5 text-sky-400" />
-            <span>DeepSeek-V3</span>
+            <span>DeepSeek Flash</span>
           </button>
 
           <button
@@ -478,7 +478,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
 
       {/* Main View Area */}
       <div className="flex-1 w-full flex flex-col overflow-hidden relative">
-        {/* NATIVE AI ASSISTANT (DeepSeek-V3 and Gemini AI) */}
+        {/* NATIVE AI ASSISTANT (DeepSeek Flash and Gemini AI) */}
         {(activeService === 'deepseek' || activeService === 'gemini') && (
           <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--bg-primary)]">
             {/* Multi-Session Header Bar */}
@@ -611,7 +611,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
                             <Bot className="w-3 h-3" />
                           </div>
                           <span className={`text-[11px] font-semibold ${activeService === 'deepseek' ? 'text-sky-400' : 'text-emerald-400'}`}>
-                            {activeService === 'deepseek' ? 'Aura AI (DeepSeek-V3)' : 'Aura AI (Gemini Flash)'}
+                            {activeService === 'deepseek' ? 'Aura AI (DeepSeek Flash)' : 'Aura AI (Gemini Flash)'}
                           </span>
                           <span className="text-[10px] text-[var(--text-secondary)]">{msg.timestamp}</span>
                         </>
@@ -645,7 +645,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] flex items-center space-x-2 text-xs text-[var(--text-secondary)]">
                     <div className={`w-2 h-2 rounded-full animate-ping ${activeService === 'deepseek' ? 'bg-sky-400' : 'bg-emerald-400'}`} />
-                    <span>{activeService === 'deepseek' ? 'DeepSeek-V3 анализирует запрос...' : 'Gemini анализирует запрос...'}</span>
+                    <span>{activeService === 'deepseek' ? 'DeepSeek Flash анализирует запрос...' : 'Gemini анализирует запрос...'}</span>
                   </div>
                 </div>
               )}
@@ -677,7 +677,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
                       handleSendMessage();
                     }
                   }}
-                  placeholder={activeService === 'deepseek' ? 'Спроси DeepSeek-V3 или нажми Enter...' : 'Спроси Aura AI или нажми Enter...'}
+                  placeholder={activeService === 'deepseek' ? 'Спроси DeepSeek Flash или нажми Enter...' : 'Спроси Aura AI или нажми Enter...'}
                   rows={2}
                   className="flex-1 bg-transparent border-0 resize-none outline-none text-xs text-[var(--text-primary)] placeholder-zinc-500 px-1 py-0.5 leading-relaxed max-h-24 select-text"
                 />
