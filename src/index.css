@@ -1,0 +1,282 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 1. macOS Sonoma Dark (Default) */
+:root, .theme-macos-dark {
+  --bg-primary: #18181a;
+  --bg-secondary: #1e1e20;
+  --bg-sidebar: #141416;
+  --bg-card: rgba(30, 30, 32, 0.7);
+  --bg-hover: rgba(255, 255, 255, 0.06);
+  --bg-active: rgba(255, 255, 255, 0.1);
+  --border-subtle: rgba(255, 255, 255, 0.08);
+  --text-primary: #ededed;
+  --text-secondary: #909095;
+  --accent-color: #0a84ff;
+  --accent-subtle: rgba(10, 132, 255, 0.15);
+  --accent-text: #ffffff;
+}
+
+/* 2. macOS Cupertino Light */
+.theme-macos-light {
+  --bg-primary: #f5f5f7;
+  --bg-secondary: #ffffff;
+  --bg-sidebar: #ebebed;
+  --bg-card: rgba(255, 255, 255, 0.85);
+  --bg-hover: rgba(0, 0, 0, 0.05);
+  --bg-active: rgba(0, 0, 0, 0.08);
+  --border-subtle: rgba(0, 0, 0, 0.08);
+  --text-primary: #1c1c1e;
+  --text-secondary: #636366;
+  --accent-color: #007aff;
+  --accent-subtle: rgba(0, 122, 255, 0.12);
+  --accent-text: #ffffff;
+}
+
+/* 3. Tokyo Night */
+.theme-tokyo-night {
+  --bg-primary: #1a1b26;
+  --bg-secondary: #1f2335;
+  --bg-sidebar: #16161e;
+  --bg-card: rgba(26, 27, 38, 0.75);
+  --bg-hover: rgba(122, 162, 247, 0.08);
+  --bg-active: rgba(122, 162, 247, 0.15);
+  --border-subtle: rgba(122, 162, 247, 0.12);
+  --text-primary: #c0caf5;
+  --text-secondary: #7aa2f7;
+  --accent-color: #7aa2f7;
+  --accent-subtle: rgba(122, 162, 247, 0.18);
+  --accent-text: #ffffff;
+}
+
+/* 4. Dracula Official */
+.theme-dracula {
+  --bg-primary: #282a36;
+  --bg-secondary: #343746;
+  --bg-sidebar: #21222c;
+  --bg-card: rgba(40, 42, 54, 0.8);
+  --bg-hover: rgba(255, 121, 198, 0.08);
+  --bg-active: rgba(255, 121, 198, 0.15);
+  --border-subtle: rgba(98, 114, 164, 0.2);
+  --text-primary: #f8f8f2;
+  --text-secondary: #6272a4;
+  --accent-color: #ff79c6;
+  --accent-subtle: rgba(255, 121, 198, 0.18);
+  --accent-text: #ffffff;
+}
+
+/* 5. One Dark Pro */
+.theme-one-dark {
+  --bg-primary: #21252b;
+  --bg-secondary: #282c34;
+  --bg-sidebar: #1e2227;
+  --bg-card: rgba(40, 44, 52, 0.8);
+  --bg-hover: rgba(97, 175, 239, 0.08);
+  --bg-active: rgba(97, 175, 239, 0.15);
+  --border-subtle: rgba(255, 255, 255, 0.07);
+  --text-primary: #abb2bf;
+  --text-secondary: #5c6370;
+  --accent-color: #61afef;
+  --accent-subtle: rgba(97, 175, 239, 0.18);
+  --accent-text: #ffffff;
+}
+
+/* 6. Cyberpunk Neon */
+.theme-cyberpunk {
+  --bg-primary: #0a0a0d;
+  --bg-secondary: #121217;
+  --bg-sidebar: #060608;
+  --bg-card: rgba(18, 18, 23, 0.85);
+  --bg-hover: rgba(0, 240, 255, 0.08);
+  --bg-active: rgba(0, 240, 255, 0.18);
+  --border-subtle: rgba(0, 240, 255, 0.18);
+  --text-primary: #f0f0f5;
+  --text-secondary: #00f0ff;
+  --accent-color: #00f0ff;
+  --accent-subtle: rgba(0, 240, 255, 0.2);
+  --accent-text: #060608;
+}
+
+/* 7. Nord Frost */
+.theme-nord {
+  --bg-primary: #2e3440;
+  --bg-secondary: #3b4252;
+  --bg-sidebar: #242933;
+  --bg-card: rgba(46, 52, 64, 0.8);
+  --bg-hover: rgba(136, 192, 208, 0.08);
+  --bg-active: rgba(136, 192, 208, 0.15);
+  --border-subtle: rgba(136, 192, 208, 0.12);
+  --text-primary: #eceff4;
+  --text-secondary: #88c0d0;
+  --accent-color: #88c0d0;
+  --accent-subtle: rgba(136, 192, 208, 0.22);
+  --accent-text: #242933;
+}
+
+/* 8. GitHub Dark Default */
+.theme-github-dark {
+  --bg-primary: #0d1117;
+  --bg-secondary: #161b22;
+  --bg-sidebar: #010409;
+  --bg-card: rgba(22, 27, 34, 0.85);
+  --bg-hover: rgba(88, 166, 255, 0.08);
+  --bg-active: rgba(88, 166, 255, 0.15);
+  --border-subtle: #30363d;
+  --text-primary: #e6edf3;
+  --text-secondary: #8b949e;
+  --accent-color: #2f81f7;
+  --accent-subtle: rgba(47, 129, 247, 0.18);
+  --accent-text: #ffffff;
+}
+
+/* 9. Catppuccin Mocha */
+.theme-catppuccin-mocha {
+  --bg-primary: #1e1e2e;
+  --bg-secondary: #252538;
+  --bg-sidebar: #181825;
+  --bg-card: rgba(37, 37, 56, 0.85);
+  --bg-hover: rgba(203, 166, 247, 0.08);
+  --bg-active: rgba(203, 166, 247, 0.15);
+  --border-subtle: rgba(203, 166, 247, 0.12);
+  --text-primary: #cdd6f4;
+  --text-secondary: #a6adc8;
+  --accent-color: #cba6f7;
+  --accent-subtle: rgba(203, 166, 247, 0.2);
+  --accent-text: #11111b;
+}
+
+/* 10. Gruvbox Dark */
+.theme-gruvbox-dark {
+  --bg-primary: #282828;
+  --bg-secondary: #32302f;
+  --bg-sidebar: #1d2021;
+  --bg-card: rgba(50, 48, 47, 0.85);
+  --bg-hover: rgba(250, 189, 47, 0.08);
+  --bg-active: rgba(250, 189, 47, 0.15);
+  --border-subtle: rgba(213, 196, 161, 0.12);
+  --text-primary: #ebdbb2;
+  --text-secondary: #a89984;
+  --accent-color: #fabd2f;
+  --accent-subtle: rgba(250, 189, 47, 0.2);
+  --accent-text: #282828;
+}
+
+/* 11. Solarized Dark */
+.theme-solarized-dark {
+  --bg-primary: #002b36;
+  --bg-secondary: #073642;
+  --bg-sidebar: #00212b;
+  --bg-card: rgba(7, 54, 66, 0.85);
+  --bg-hover: rgba(42, 161, 152, 0.08);
+  --bg-active: rgba(42, 161, 152, 0.15);
+  --border-subtle: rgba(88, 110, 117, 0.2);
+  --text-primary: #93a1a1;
+  --text-secondary: #657b83;
+  --accent-color: #2aa198;
+  --accent-subtle: rgba(42, 161, 152, 0.2);
+  --accent-text: #002b36;
+}
+
+/* 12. Monokai Pro */
+.theme-monokai-pro {
+  --bg-primary: #2d2a2e;
+  --bg-secondary: #363337;
+  --bg-sidebar: #221f22;
+  --bg-card: rgba(54, 51, 55, 0.85);
+  --bg-hover: rgba(255, 216, 102, 0.08);
+  --bg-active: rgba(255, 216, 102, 0.15);
+  --border-subtle: rgba(147, 146, 147, 0.15);
+  --text-primary: #fcfcfa;
+  --text-secondary: #939293;
+  --accent-color: #ffd866;
+  --accent-subtle: rgba(255, 216, 102, 0.2);
+  --accent-text: #221f22;
+}
+
+/* 13. Vesper Minimalist Black */
+.theme-vesper {
+  --bg-primary: #101010;
+  --bg-secondary: #161616;
+  --bg-sidebar: #0a0a0a;
+  --bg-card: rgba(22, 22, 22, 0.9);
+  --bg-hover: rgba(255, 199, 153, 0.07);
+  --bg-active: rgba(255, 199, 153, 0.12);
+  --border-subtle: #242424;
+  --text-primary: #ffffff;
+  --text-secondary: #8a8a8a;
+  --accent-color: #ffc799;
+  --accent-subtle: rgba(255, 199, 153, 0.18);
+  --accent-text: #101010;
+}
+
+/* Custom macOS-style scrollbars */
+::-webkit-scrollbar {
+  width: 7px;
+  height: 7px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 128, 0.25);
+  border-radius: 9999px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 128, 0.45);
+}
+
+/* Solid Glassmorphism without gradients */
+.mac-blur {
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+.mac-card {
+  background: var(--bg-card);
+  backdrop-filter: blur(20px);
+  border: 1px solid var(--border-subtle);
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.5);
+}
+
+/* Traffic light button styling */
+.traffic-btn {
+  width: 12px;
+  height: 12px;
+  border-radius: 9999px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  transition: all 0.15s ease;
+  position: relative;
+}
+
+.traffic-btn svg {
+  opacity: 0;
+  transition: opacity 0.1s ease;
+}
+
+.traffic-group:hover .traffic-btn svg {
+  opacity: 0.7;
+}
+
+
+
+/* Animations */
+@keyframes fadeInScale {
+  from {
+    opacity: 0;
+    transform: scale(0.97) translateY(-8px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+.animate-spotlight {
+  animation: fadeInScale 0.18s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
