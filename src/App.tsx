@@ -78,7 +78,7 @@ export const App: React.FC = () => {
   const [isZenMode, setIsZenMode] = useState(false);
   const [isScratchpadOpen, setIsScratchpadOpen] = useState(false);
   const [isAiOpen, setIsAiOpen] = useState(false);
-  const [aiService, setAiService] = useState<'gemini' | 'google' | 'deepseek'>('gemini');
+  const [aiService, setAiService] = useState<'gemini' | 'google' | 'deepseek'>('deepseek');
   const [activeCodeSelection, setActiveCodeSelection] = useState('');
   const [targetLocation, setTargetLocation] = useState<{ line: number; col?: number; timestamp: number } | null>(null);
   const [insertCodeAction, setInsertCodeAction] = useState<{ code: string; timestamp: number } | null>(null);
@@ -1243,6 +1243,10 @@ export const App: React.FC = () => {
             if (typeof window !== 'undefined' && (window as any).chrome?.webview) {
               (window as any).chrome.webview.postMessage('ai-open-deepseek');
             }
+          }
+          if (cmdId === 'ai-gemini') {
+            setAiService('gemini');
+            setIsAiOpen(true);
           }
           if (cmdId === 'save-file' && activeTabId) handleSaveFile(activeTabId);
           if (cmdId === 'new-file') handleCreateFile('', 'untitled.txt');

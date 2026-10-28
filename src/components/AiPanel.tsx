@@ -66,7 +66,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
   onInsertCode,
   onDiffCode,
 }) => {
-  const [activeService, setActiveService] = useState<'gemini' | 'google' | 'deepseek'>(service || 'gemini');
+  const [activeService, setActiveService] = useState<'gemini' | 'google' | 'deepseek'>(service || 'deepseek');
 
   useEffect(() => {
     if (service && service !== activeService) {
@@ -98,7 +98,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
       {
         id: 'welcome',
         role: 'assistant',
-        content: 'Привет! Я встроенный ИИ-ассистент Aura IDE на базе **Gemini 3.1 Flash-Lite**.\n\nЗадай мне любой вопрос, попроси написать код, найти ошибки в текущем файле или объяснить алгоритм.',
+        content: 'Привет! Я встроенный ИИ-ассистент Aura IDE на базе **DeepSeek-V3** и **Gemini**.\n\nЗадай мне любой вопрос, попроси написать код, найти ошибки в текущем файле или объяснить алгоритм.',
         timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
       }
     ];
@@ -125,7 +125,6 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const googleIframeRef = useRef<HTMLIFrameElement>(null);
-  const deepseekIframeRef = useRef<HTMLIFrameElement>(null);
 
   const currentSession = sessions.find(s => s.id === activeSessionId) || sessions[0] || {
     id: 'fallback',
@@ -146,7 +145,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
 
   // Scroll to bottom on new message
   useEffect(() => {
-    if (activeService === 'gemini') {
+    if (activeService === 'gemini' || activeService === 'deepseek') {
       messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
     }
   }, [messages, activeService, isLoading]);
@@ -197,7 +196,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
         {
           id: `welcome-${Date.now()}`,
           role: 'assistant',
-          content: 'Привет! Начат новый диалог с **Gemini 3.1 Flash-Lite**. Чем могу помочь?',
+          content: 'Привет! Начат новый диалог с **DeepSeek-V3** и **Gemini**. Чем могу помочь?',
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
         }
       ]
@@ -287,6 +286,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
+          provider: activeService === 'gemini' ? 'gemini' : 'deepseek',
           messages: newHistory.map(m => ({ role: m.role, content: m.content })),
           context
         })
@@ -363,9 +363,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
   };
 
   const handleReloadWeb = () => {
-    if (activeService === 'deepseek' && deepseekIframeRef.current) {
-      deepseekIframeRef.current.src = 'https://chat.deepseek.com';
-    } else if (activeService === 'google' && googleIframeRef.current) {
+    if (googleIframeRef.current) {
       googleIframeRef.current.src = '/proxy?url=https://www.google.com/search?q=&udm=50';
     }
   };
@@ -376,8 +374,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
   };
 
   const openInBrowser = () => {
-    const url = activeService === 'deepseek' ? 'https://chat.deepseek.com' : 'https://www.google.com/search?q=&udm=50';
-    window.open(url, '_blank');
+    window.open('https://www.google.com/search?q=&udm=50', '_blank');
   };
 
   return (
@@ -402,14 +399,26 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
       <div className="h-10 px-2.5 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] shrink-0">
         <div className="p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] flex items-center space-x-1">
           <button
-            onClick={() => handleSwitchService('gemini')}
+            onClick={() => handleSwitchService('deepseek')}
             className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${
+              activeService === 'deepseek'
+                ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
+                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
+            }`}
+          >
+            <Bot className="w-3.5 h-3.5 text-sky-400" />
+            <span>DeepSeek-V3</span>
+          </button>
+
+          <button
+            onClick={() => handleSwitchService('gemini')}
+            className={`px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${
               activeService === 'gemini'
                 ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
                 : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
             }`}
           >
-            <Bot className="w-3.5 h-3.5" />
+            <Bot className="w-3.5 h-3.5 text-emerald-400" />
             <span>Gemini AI</span>
           </button>
 
@@ -422,24 +431,13 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
             }`}
           >
             <Search className="w-3.5 h-3.5" />
-            <span>Google</span>
-          </button>
-
-          <button
-            onClick={() => handleSwitchService('deepseek')}
-            className={`px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1 transition-all ${
-              activeService === 'deepseek'
-                ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
-                : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)]'
-            }`}
-          >
-            <span>DeepSeek</span>
+            <span>Google Web</span>
           </button>
         </div>
 
         {/* Action Controls */}
         <div className="flex items-center space-x-1 text-[var(--text-secondary)]">
-          {activeService === 'gemini' && (
+          {(activeService === 'gemini' || activeService === 'deepseek') && (
             <button
               onClick={handleClearHistory}
               title="Очистить текущий диалог"
@@ -449,7 +447,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
             </button>
           )}
 
-          {activeService !== 'gemini' && (
+          {activeService === 'google' && (
             <>
               <button
                 onClick={handleReloadWeb}
@@ -480,8 +478,8 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
 
       {/* Main View Area */}
       <div className="flex-1 w-full flex flex-col overflow-hidden relative">
-        {/* TAB 1: Native Gemini AI Assistant */}
-        {activeService === 'gemini' && (
+        {/* NATIVE AI ASSISTANT (DeepSeek-V3 and Gemini AI) */}
+        {(activeService === 'deepseek' || activeService === 'gemini') && (
           <div className="flex-1 flex flex-col h-full overflow-hidden bg-[var(--bg-primary)]">
             {/* Multi-Session Header Bar */}
             <div className="px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] flex items-center justify-between text-xs shrink-0">
@@ -510,7 +508,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
             {isSessionsDrawerOpen && (
               <div className="border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] p-2 space-y-1 max-h-56 overflow-y-auto shadow-inner select-none z-10 shrink-0">
                 <div className="flex items-center justify-between px-1 pb-1 border-b border-[var(--border-subtle)] text-[11px] text-[var(--text-secondary)]">
-                  <span>Диалоги с Gemini ({sessions.length})</span>
+                  <span>Диалоги ({sessions.length})</span>
                   <button
                     onClick={createNewSession}
                     className="flex items-center space-x-1 text-[var(--accent-color)] hover:underline"
@@ -609,10 +607,12 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
                         </>
                       ) : (
                         <>
-                          <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center">
+                          <div className={`w-4 h-4 rounded-full flex items-center justify-center ${activeService === 'deepseek' ? 'bg-sky-500/20 text-sky-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                             <Bot className="w-3 h-3" />
                           </div>
-                          <span className="text-[11px] font-semibold text-emerald-400">Aura AI (Gemini Flash-Lite)</span>
+                          <span className={`text-[11px] font-semibold ${activeService === 'deepseek' ? 'text-sky-400' : 'text-emerald-400'}`}>
+                            {activeService === 'deepseek' ? 'Aura AI (DeepSeek-V3)' : 'Aura AI (Gemini Flash)'}
+                          </span>
                           <span className="text-[10px] text-[var(--text-secondary)]">{msg.timestamp}</span>
                         </>
                       )}
@@ -638,14 +638,14 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
               {isLoading && (
                 <div className="flex flex-col items-start">
                   <div className="flex items-center space-x-1.5 mb-1 px-1">
-                    <div className="w-4 h-4 rounded-full bg-emerald-500/20 text-emerald-400 flex items-center justify-center animate-pulse">
+                    <div className={`w-4 h-4 rounded-full flex items-center justify-center animate-pulse ${activeService === 'deepseek' ? 'bg-sky-500/20 text-sky-400' : 'bg-emerald-500/20 text-emerald-400'}`}>
                       <Bot className="w-3 h-3" />
                     </div>
-                    <span className="text-[11px] font-semibold text-emerald-400">Aura AI генерирует ответ...</span>
+                    <span className={`text-[11px] font-semibold ${activeService === 'deepseek' ? 'text-sky-400' : 'text-emerald-400'}`}>Aura AI генерирует ответ...</span>
                   </div>
                   <div className="p-3 rounded-xl bg-[var(--bg-secondary)] border border-[var(--border-subtle)] flex items-center space-x-2 text-xs text-[var(--text-secondary)]">
-                    <div className="w-2 h-2 rounded-full bg-emerald-400 animate-ping" />
-                    <span>Gemini 3.1 Flash-Lite анализирует запрос...</span>
+                    <div className={`w-2 h-2 rounded-full animate-ping ${activeService === 'deepseek' ? 'bg-sky-400' : 'bg-emerald-400'}`} />
+                    <span>{activeService === 'deepseek' ? 'DeepSeek-V3 анализирует запрос...' : 'Gemini анализирует запрос...'}</span>
                   </div>
                 </div>
               )}
@@ -677,7 +677,7 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
                       handleSendMessage();
                     }
                   }}
-                  placeholder="Спроси Aura AI или нажми Enter..."
+                  placeholder={activeService === 'deepseek' ? 'Спроси DeepSeek-V3 или нажми Enter...' : 'Спроси Aura AI или нажми Enter...'}
                   rows={2}
                   className="flex-1 bg-transparent border-0 resize-none outline-none text-xs text-[var(--text-primary)] placeholder-zinc-500 px-1 py-0.5 leading-relaxed max-h-24 select-text"
                 />
@@ -703,19 +703,6 @@ export const AiPanel: React.FC<AiPanelProps> = React.memo(({
               src="/proxy?url=https://www.google.com/search?q=&udm=50"
               title="Google Search AI"
               allow="clipboard-read; clipboard-write; microphone"
-              className="w-full h-full border-0"
-            />
-          </div>
-        )}
-
-        {/* TAB 3: DeepSeek Chat Frame */}
-        {activeService === 'deepseek' && (
-          <div className="w-full h-full absolute inset-0 bg-white">
-            <iframe
-              ref={deepseekIframeRef}
-              src="https://chat.deepseek.com"
-              title="DeepSeek AI Chat"
-              allow="clipboard-read; clipboard-write; microphone; camera"
               className="w-full h-full border-0"
             />
           </div>

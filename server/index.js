@@ -801,11 +801,55 @@ app.post('/api/ai/inline-complete', async (req, res) => {
     return res.json({ completion: copilotCache.get(cacheKey), cached: true });
   }
 
-  const apiKey = customKey || process.env.GEMINI_API_KEY;
-  const models = [
-    'gemini-3.1-flash-lite',
-    'gemini-flash-latest'
-  ];
+  const deepseekApiKey = req.body.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
+  const geminiApiKey = customKey || process.env.GEMINI_API_KEY;
+
+  // 1. Primary AI Engine: DeepSeek FIM (Fill-In-The-Middle official code completion)
+  if (deepseekApiKey) {
+    try {
+      const fimRes = await fetch('https://api.deepseek.com/beta/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${deepseekApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          prompt: prefix ? prefix.slice(-1500) : '',
+          suffix: suffix ? suffix.slice(0, 500) : '',
+          max_tokens: 64,
+          temperature: 0.1
+        }),
+        signal: AbortSignal.timeout(3000)
+      });
+
+      if (fimRes.ok) {
+        const json = await fimRes.json();
+        const rawText = json.choices?.[0]?.text;
+        if (rawText && typeof rawText === 'string') {
+          const cleaned = cleanCopilotCompletion(rawText, prefix);
+          if (cleaned.trim()) {
+            if (copilotCache.size > 200) {
+              const firstKey = copilotCache.keys().next().value;
+              copilotCache.delete(firstKey);
+            }
+            copilotCache.set(cacheKey, cleaned);
+            console.log(`[AI Copilot] deepseek-fim (${language}) => ${JSON.stringify(cleaned)}`);
+            return res.json({ completion: cleaned, model: 'deepseek-chat' });
+          }
+        }
+      }
+    } catch (e) {
+      console.warn(`[AI Copilot] DeepSeek FIM fallback: ${e.message}`);
+    }
+  }
+
+  // 2. Secondary AI Engine: Google Gemini Flash with multi-model fallback
+  if (geminiApiKey) {
+    const models = [
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest'
+    ];
 
   const prompt = `You are GitHub Copilot inline code completion engine.
 Output ONLY the raw code continuation that immediately follows the cursor.
@@ -818,8 +862,7 @@ ${prefix ? prefix.slice(-1000) : ''}<CURSOR>${suffix ? suffix.slice(0, 300) : ''
 
 Raw continuation at <CURSOR>:`;
 
-  if (apiKey) {
-    for (const model of models) {
+  for (const model of models) {
       try {
         const body = JSON.stringify({
           contents: [{ parts: [{ text: prompt }] }],
@@ -833,7 +876,7 @@ Raw continuation at <CURSOR>:`;
           return new Promise((resolve) => {
             const httpsReq = https.request({
               hostname: 'generativelanguage.googleapis.com',
-              path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+              path: `/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
               method: 'POST',
               headers: {
                 'Content-Type': 'application/json',
@@ -883,7 +926,7 @@ Raw continuation at <CURSOR>:`;
     }
   }
 
-  // Intelligent Local Semantic Fallback (0ms, 100% reliable)
+  // 3. Intelligent Local Semantic Fallback (0ms, 100% reliable)
   const localFallback = generateLocalSemanticFallback(prefix, suffix, language, filename);
   if (localFallback && localFallback.trim()) {
     if (copilotCache.size > 200) {
@@ -900,87 +943,144 @@ Raw continuation at <CURSOR>:`;
 
 // Dedicated Conversational AI Agent endpoint (with automatic model fallback)
 app.post('/api/ai/chat', async (req, res) => {
-  const { messages, context, apiKey: customKey } = req.body;
+  const { messages, context, apiKey: customKey, provider } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
     return res.status(400).json({ error: 'Messages array required' });
   }
 
-  const apiKey = customKey || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(401).json({ error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in .env or environment.' });
-  }
+  const deepseekApiKey = req.body.deepseekApiKey || process.env.DEEPSEEK_API_KEY;
+  const geminiApiKey = customKey || process.env.GEMINI_API_KEY;
 
-  const chatModels = [
-    'gemini-3-flash-preview',
-    'gemini-3.1-flash-lite',
-    'gemini-3.8-flash',
-    'gemini-flash-latest'
-  ];
+  if (!deepseekApiKey && !geminiApiKey) {
+    return res.status(401).json({ error: 'No AI API Key configured. Please set DEEPSEEK_API_KEY or GEMINI_API_KEY in .env.' });
+  }
 
   let systemPrompt = 'You are Aura AI, an expert programming assistant built directly into Aura IDE. You write concise, high-performance, and correct code. When asked in Russian, respond in clean natural Russian. Format code blocks with appropriate language tags. STRICT RULE: NEVER use any emojis or emoji symbols in any part of your response. Use standard markdown bold, lists, and code blocks.';
   if (context && context.code) {
     systemPrompt += `\n\nActive File: ${context.filename || 'code'} (${context.language || 'plaintext'})\n\`\`\`${context.language || ''}\n${context.code.slice(0, 4000)}\n\`\`\``;
   }
 
-  const geminiContents = messages.map((m, idx) => {
-    let text = m.content;
-    if (idx === 0 && systemPrompt) {
-      text = `[Instructions & Context]\n${systemPrompt}\n\n[User Request]\n${text}`;
-    }
-    return {
-      role: m.role === 'assistant' ? 'model' : 'user',
-      parts: [{ text }]
-    };
-  });
-
-  for (const model of chatModels) {
+  const callDeepSeek = async () => {
+    if (!deepseekApiKey) return null;
     try {
-      const sendRequest = () => {
-        return new Promise((resolve) => {
-          const body = JSON.stringify({
-            contents: geminiContents,
-            generationConfig: {
-              maxOutputTokens: 2048,
-              temperature: 0.4
-            }
-          });
+      const dsMessages = [
+        { role: 'system', content: systemPrompt },
+        ...messages.map(m => ({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        }))
+      ];
 
-          const httpsReq = https.request({
-            hostname: 'generativelanguage.googleapis.com',
-            path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(body)
-            },
-            timeout: 20000
-          }, (apiRes) => {
-            let d = '';
-            apiRes.on('data', chunk => d += chunk);
-            apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
-          });
+      const dsRes = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${deepseekApiKey}`
+        },
+        body: JSON.stringify({
+          model: 'deepseek-chat',
+          messages: dsMessages,
+          max_tokens: 2048,
+          temperature: 0.3
+        }),
+        signal: AbortSignal.timeout(25000)
+      });
 
-          httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
-          httpsReq.on('timeout', () => {
-            httpsReq.destroy();
-            resolve({ statusCode: 504, timeout: true });
-          });
-
-          httpsReq.write(body);
-          httpsReq.end();
-        });
-      };
-
-      const result = await sendRequest();
-      if (result.statusCode === 200 && result.data) {
-        const json = JSON.parse(result.data);
-        let replyText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+      if (dsRes.ok) {
+        const json = await dsRes.json();
+        let replyText = json.choices?.[0]?.message?.content;
         if (replyText) {
           replyText = replyText.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
-          return res.json({ reply: replyText, model });
+          return { reply: replyText, model: 'deepseek-chat' };
         }
       }
-    } catch {}
+    } catch (e) {
+      console.warn(`[AI Chat] DeepSeek chat error: ${e.message}`);
+    }
+    return null;
+  };
+
+  const callGemini = async () => {
+    if (!geminiApiKey) return null;
+    const chatModels = [
+      'gemini-3.1-flash-lite',
+      'gemini-flash-latest',
+      'gemini-3.8-flash'
+    ];
+
+    const geminiContents = messages.map((m, idx) => {
+      let text = m.content;
+      if (idx === 0 && systemPrompt) {
+        text = `[Instructions & Context]\n${systemPrompt}\n\n[User Request]\n${text}`;
+      }
+      return {
+        role: m.role === 'assistant' ? 'model' : 'user',
+        parts: [{ text }]
+      };
+    });
+
+    for (const model of chatModels) {
+      try {
+        const sendRequest = () => {
+          return new Promise((resolve) => {
+            const body = JSON.stringify({
+              contents: geminiContents,
+              generationConfig: {
+                maxOutputTokens: 2048,
+                temperature: 0.4
+              }
+            });
+
+            const httpsReq = https.request({
+              hostname: 'generativelanguage.googleapis.com',
+              path: `/v1beta/models/${model}:generateContent?key=${geminiApiKey}`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+              },
+              timeout: 15000
+            }, (apiRes) => {
+              let d = '';
+              apiRes.on('data', chunk => d += chunk);
+              apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
+            });
+
+            httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
+            httpsReq.on('timeout', () => {
+              httpsReq.destroy();
+              resolve({ statusCode: 504, timeout: true });
+            });
+
+            httpsReq.write(body);
+            httpsReq.end();
+          });
+        };
+
+        const result = await sendRequest();
+        if (result.statusCode === 200 && result.data) {
+          const json = JSON.parse(result.data);
+          let replyText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (replyText) {
+            replyText = replyText.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
+            return { reply: replyText, model };
+          }
+        }
+      } catch {}
+    }
+    return null;
+  };
+
+  if (provider === 'gemini') {
+    const resGemini = await callGemini();
+    if (resGemini) return res.json(resGemini);
+    const resDeepSeek = await callDeepSeek();
+    if (resDeepSeek) return res.json(resDeepSeek);
+  } else {
+    const resDeepSeek = await callDeepSeek();
+    if (resDeepSeek) return res.json(resDeepSeek);
+    const resGemini = await callGemini();
+    if (resGemini) return res.json(resGemini);
   }
 
   res.status(500).json({ error: 'Failed to generate response from AI models' });
