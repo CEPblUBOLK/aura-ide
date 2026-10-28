@@ -119,7 +119,7 @@ export function registerMonacoCompletions(monaco: any) {
   // 1. DYNAMIC PYTHON COMPLETIONS (STRICT LANGUAGE SEPARATION)
   // =========================================================================
   monaco.languages.registerCompletionItemProvider('python', {
-    triggerCharacters: ['.', ' ', '(', '@', ':', '\'', '"', ','],
+    triggerCharacters: ['.', '(', '@', ':', '\'', '"', ','],
     provideCompletionItems: async (model: any, position: any) => {
       const word = model.getWordUntilPosition(position);
       const lineContent = model.getLineContent(position.lineNumber);
@@ -486,7 +486,7 @@ export function registerMonacoCompletions(monaco: any) {
   // 2. DYNAMIC RUST COMPLETIONS (STRICT LANGUAGE SEPARATION)
   // =========================================================================
   monaco.languages.registerCompletionItemProvider('rust', {
-    triggerCharacters: ['.', ':', '!', ' '],
+    triggerCharacters: ['.', ':', '!'],
     provideCompletionItems: async (model: any, position: any) => {
       const word = model.getWordUntilPosition(position);
       const lineContent = model.getLineContent(position.lineNumber);
@@ -569,7 +569,7 @@ export function registerMonacoCompletions(monaco: any) {
   // =========================================================================
   const registerJsTs = (lang: string) => {
     monaco.languages.registerCompletionItemProvider(lang, {
-      triggerCharacters: ['.', ' ', '\'', '"', '/', '<', '{'],
+      triggerCharacters: ['.', '\'', '"', '/', '<', '{'],
       provideCompletionItems: async (model: any, position: any) => {
         const word = model.getWordUntilPosition(position);
         const lineContent = model.getLineContent(position.lineNumber);
@@ -672,7 +672,7 @@ export function registerMonacoCompletions(monaco: any) {
   // 4. GO COMPLETIONS (STRICT LANGUAGE SEPARATION)
   // =========================================================================
   monaco.languages.registerCompletionItemProvider('go', {
-    triggerCharacters: ['.', ' '],
+    triggerCharacters: ['.'],
     provideCompletionItems: async (model: any, position: any) => {
       const word = model.getWordUntilPosition(position);
       const lineContent = model.getLineContent(position.lineNumber);
@@ -744,7 +744,7 @@ export function registerMonacoCompletions(monaco: any) {
   // =========================================================================
   const registerCpp = (lang: string) => {
     monaco.languages.registerCompletionItemProvider(lang, {
-      triggerCharacters: ['.', '>', ':', '#', ' '],
+      triggerCharacters: ['.', '>', ':', '#'],
       provideCompletionItems: (model: any, position: any) => {
         const word = model.getWordUntilPosition(position);
         const range = {
@@ -792,7 +792,7 @@ export function registerMonacoCompletions(monaco: any) {
   // 6. HTML COMPLETIONS
   // =========================================================================
   monaco.languages.registerCompletionItemProvider('html', {
-    triggerCharacters: ['<', '!', ' '],
+    triggerCharacters: ['<', '!'],
     provideCompletionItems: (model: any, position: any) => {
       const word = model.getWordUntilPosition(position);
       const range = {

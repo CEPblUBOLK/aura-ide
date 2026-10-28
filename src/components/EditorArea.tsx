@@ -611,7 +611,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                 enabled: settings.aiCopilotEnabled !== false,
                 mode: 'prefix',
                 showToolbar: 'onHover',
-                suppressSuggestions: false,
+                suppressSuggestions: true,
               },
               quickSuggestions: { other: true, comments: false, strings: true },
               suggestOnTriggerCharacters: true,

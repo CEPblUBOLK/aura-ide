@@ -122,6 +122,23 @@ export function registerAiInlineCopilot(monaco: any) {
           text = text.slice(lineUpToCursor.trimStart().length);
         }
 
+        // Token / word overlap check
+        const pTrim = lineUpToCursor.trimEnd();
+        let cTrim = text.trimStart();
+        const maxCheck = Math.min(pTrim.length, cTrim.length);
+        for (let len = maxCheck; len >= 2; len--) {
+          const pSub = pTrim.slice(-len);
+          const cSub = cTrim.slice(0, len);
+          if (pSub.toLowerCase() === cSub.toLowerCase()) {
+            text = cTrim.slice(len);
+            break;
+          }
+        }
+
+        if (lineUpToCursor.endsWith(' ') && text.startsWith(' ')) {
+          text = text.trimStart();
+        }
+
         if (!text.trim()) return { items: [] };
 
         memoryCache.set(cacheKey, text);

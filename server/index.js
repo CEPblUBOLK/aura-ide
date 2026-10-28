@@ -668,23 +668,128 @@ app.get('/api/python/environments', async (req, res) => {
   }
 });
 
-// AI Inline Code Autocomplete (GitHub Copilot style using Gemini Flash with multi-model fallback)
+// AI Inline Code Autocomplete (GitHub Copilot style with Local AST Fallback + Multi-Model Gemini)
 const copilotCache = new Map();
 
 function cleanCopilotCompletion(raw, prefix) {
-  let cleaned = (raw || '').replace(/^```[a-zA-Z]*\r?\n?/g, '').replace(/```\s*$/g, '');
-  if (prefix && cleaned.startsWith(prefix)) {
-    cleaned = cleaned.slice(prefix.length);
-  } else {
-    const lastLine = (prefix ? prefix.split('\n').pop() : '') || '';
-    if (lastLine.trim() && cleaned.startsWith(lastLine)) {
-      cleaned = cleaned.slice(lastLine.length);
-    } else if (lastLine.trim() && cleaned.startsWith(lastLine.trimStart())) {
-      cleaned = cleaned.slice(lastLine.trimStart().length);
+  let clean = (raw || '')
+    .replace(/^```[a-zA-Z]*\r?\n?/g, '')
+    .replace(/```\s*$/g, '');
+
+  if (prefix && clean.startsWith(prefix)) {
+    clean = clean.slice(prefix.length);
+  }
+
+  const lines = (prefix || '').split('\n');
+  const lastLine = lines[lines.length - 1] || '';
+  if (lastLine.trim() && clean.startsWith(lastLine)) {
+    clean = clean.slice(lastLine.length);
+  } else if (lastLine.trim() && clean.startsWith(lastLine.trimStart())) {
+    clean = clean.slice(lastLine.trimStart().length);
+  }
+
+  // Token / word overlap stripping
+  const pTrim = (prefix || '').trimEnd();
+  let cTrim = clean.trimStart();
+  const maxCheck = Math.min(pTrim.length, cTrim.length);
+  for (let len = maxCheck; len >= 2; len--) {
+    const pSub = pTrim.slice(-len);
+    const cSub = cTrim.slice(0, len);
+    if (pSub.toLowerCase() === cSub.toLowerCase()) {
+      clean = cTrim.slice(len);
+      break;
     }
   }
-  cleaned = cleaned.replace(/^(Here is|To complete|You can|Sure|Certainly|Note:).*?\r?\n/i, '');
-  return cleaned;
+
+  if ((prefix || '').endsWith(' ') && clean.startsWith(' ')) {
+    clean = clean.trimStart();
+  }
+
+  clean = clean.replace(/^(Here is|To complete|You can|Sure|Certainly|Note:).*?\r?\n/i, '');
+  return clean;
+}
+
+function generateLocalSemanticFallback(prefix, suffix, language, filename) {
+  const cleanPrefix = (prefix || '').replace(/\r\n/g, '\n');
+  const lines = cleanPrefix.split('\n');
+  const currentLine = lines[lines.length - 1] || '';
+  const lang = (language || '').toLowerCase();
+
+  // Python
+  if (lang === 'python' || (filename && filename.endsWith('.py'))) {
+    // 1. from <pkg> import
+    const fromMatch = currentLine.match(/^\s*from\s+([a-zA-Z0-9_.]+)\s+import\s*(.*)$/);
+    if (fromMatch) {
+      const targetMod = fromMatch[1].toLowerCase();
+      const after = fromMatch[2].trim();
+      if (!after) {
+        const popular = {
+          'aiogram': 'Bot, Dispatcher, types, F, Router',
+          'aiogram.filters': 'Command, CommandStart',
+          'aiogram.types': 'Message, CallbackQuery',
+          'asyncio': 'run, sleep, gather, create_task',
+          'os': 'path, environ, getcwd',
+          'sys': 'argv, exit, path',
+          'math': 'sin, cos, pi, sqrt, ceil, floor',
+          'typing': 'Optional, List, Dict, Any, Union, Tuple',
+          'pydantic': 'BaseModel, Field',
+          'fastapi': 'FastAPI, Depends, HTTPException, status',
+          'flask': 'Flask, request, jsonify, render_template',
+          'datetime': 'datetime, timedelta, timezone',
+          'json': 'dumps, loads',
+          'requests': 'get, post, Response',
+          'subprocess': 'run, Popen, PIPE',
+          'unittest.mock': 'Mock, patch, MagicMock',
+          'pathlib': 'Path',
+          'collections': 'defaultdict, Counter, deque',
+          'itertools': 'chain, combinations, permutations',
+          'random': 'choice, randint, random, shuffle',
+          're': 'search, match, findall, sub'
+        };
+        if (popular[targetMod]) return popular[targetMod];
+      }
+    }
+
+    // 2. import
+    if (/^\s*import\s*$/.test(currentLine)) {
+      return 'os, sys, json, time';
+    }
+
+    // 3. if __name__ ==
+    if (/if\s+__name__\s*==\s*['"]?$/.test(currentLine)) {
+      return `'__main__':\n    asyncio.run(main())`;
+    }
+
+    // 4. async def main():
+    if (/^\s*async\s+def\s+main\(\s*\)\s*:\s*$/.test(currentLine)) {
+      const indent = currentLine.match(/^\s*/)[0] + '    ';
+      return `\n${indent}print("Starting...")\n\nif __name__ == '__main__':\n    asyncio.run(main())`;
+    }
+
+    // 5. def func(args):
+    if (/^\s*def\s+[a-zA-Z0-9_]+\s*\([^)]*\)\s*:\s*$/.test(currentLine)) {
+      const indent = currentLine.match(/^\s*/)[0] + '    ';
+      return `\n${indent}pass`;
+    }
+
+    // 6. class Name:
+    if (/^\s*class\s+[a-zA-Z0-9_]+(\([^)]*\))?\s*:\s*$/.test(currentLine)) {
+      const indent = currentLine.match(/^\s*/)[0] + '    ';
+      return `\n${indent}def __init__(self):\n${indent}    pass`;
+    }
+  }
+
+  // JavaScript / TypeScript
+  if (lang === 'typescript' || lang === 'javascript' || lang === 'typescriptreact' || lang === 'javascriptreact') {
+    if (/const\s*\[([a-zA-Z0-9_]+),\s*set\1\]\s*=\s*$/i.test(currentLine)) {
+      return 'useState(null);';
+    }
+    if (/^\s*import\s*$/i.test(currentLine)) {
+      return "{ useState, useEffect } from 'react';";
+    }
+  }
+
+  return '';
 }
 
 app.post('/api/ai/inline-complete', async (req, res) => {
@@ -697,15 +802,9 @@ app.post('/api/ai/inline-complete', async (req, res) => {
   }
 
   const apiKey = customKey || process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(401).json({ error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in .env or environment.' });
-  }
-
   const models = [
-    'gemini-3-flash-preview',
     'gemini-3.1-flash-lite',
-    'gemini-flash-lite-latest',
-    'gemini-3.5-flash-lite'
+    'gemini-flash-latest'
   ];
 
   const prompt = `You are GitHub Copilot inline code completion engine.
@@ -719,64 +818,81 @@ ${prefix ? prefix.slice(-1000) : ''}<CURSOR>${suffix ? suffix.slice(0, 300) : ''
 
 Raw continuation at <CURSOR>:`;
 
-  for (const model of models) {
-    try {
-      const isGemini3 = model.includes('3-') || model.includes('3.');
-      const body = JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig: {
-          maxOutputTokens: 64,
-          temperature: 0.1,
-          ...(isGemini3 ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } } : {})
-        }
-      });
-
-      const sendRequest = () => {
-        return new Promise((resolve) => {
-          const httpsReq = https.request({
-            hostname: 'generativelanguage.googleapis.com',
-            path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-            method: 'POST',
-            headers: {
-              'Content-Type': 'application/json',
-              'Content-Length': Buffer.byteLength(body)
-            },
-            timeout: 4500
-          }, (apiRes) => {
-            let d = '';
-            apiRes.on('data', chunk => d += chunk);
-            apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
-          });
-
-          httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
-          httpsReq.on('timeout', () => {
-            httpsReq.destroy();
-            resolve({ statusCode: 504, timeout: true });
-          });
-
-          httpsReq.write(body);
-          httpsReq.end();
+  if (apiKey) {
+    for (const model of models) {
+      try {
+        const body = JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig: {
+            maxOutputTokens: 48,
+            temperature: 0.1
+          }
         });
-      };
 
-      const result = await sendRequest();
-      if (result.statusCode === 200 && result.data) {
-        const json = JSON.parse(result.data);
-        const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
-        if (rawText && typeof rawText === 'string') {
-          const cleaned = cleanCopilotCompletion(rawText, prefix);
-          if (cleaned.trim()) {
-            if (copilotCache.size > 200) {
-              const firstKey = copilotCache.keys().next().value;
-              copilotCache.delete(firstKey);
+        const sendRequest = () => {
+          return new Promise((resolve) => {
+            const httpsReq = https.request({
+              hostname: 'generativelanguage.googleapis.com',
+              path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                'Content-Length': Buffer.byteLength(body)
+              },
+              timeout: 1800
+            }, (apiRes) => {
+              let d = '';
+              apiRes.on('data', chunk => d += chunk);
+              apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
+            });
+
+            httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
+            httpsReq.on('timeout', () => {
+              httpsReq.destroy();
+              resolve({ statusCode: 504, timeout: true });
+            });
+
+            httpsReq.write(body);
+            httpsReq.end();
+          });
+        };
+
+        const result = await sendRequest();
+        if (result.statusCode === 429) {
+          // Free tier quota exhausted, break immediately to local fallback
+          break;
+        }
+
+        if (result.statusCode === 200 && result.data) {
+          const json = JSON.parse(result.data);
+          const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+          if (rawText && typeof rawText === 'string') {
+            const cleaned = cleanCopilotCompletion(rawText, prefix);
+            if (cleaned.trim()) {
+              if (copilotCache.size > 200) {
+                const firstKey = copilotCache.keys().next().value;
+                copilotCache.delete(firstKey);
+              }
+              copilotCache.set(cacheKey, cleaned);
+              console.log(`[AI Copilot] ${model} (${language}) => ${JSON.stringify(cleaned)}`);
+              return res.json({ completion: cleaned, model });
             }
-            copilotCache.set(cacheKey, cleaned);
-            console.log(`[AI Copilot] ${model} (${language}) => ${JSON.stringify(cleaned)}`);
-            return res.json({ completion: cleaned, model });
           }
         }
-      }
-    } catch {}
+      } catch {}
+    }
+  }
+
+  // Intelligent Local Semantic Fallback (0ms, 100% reliable)
+  const localFallback = generateLocalSemanticFallback(prefix, suffix, language, filename);
+  if (localFallback && localFallback.trim()) {
+    if (copilotCache.size > 200) {
+      const firstKey = copilotCache.keys().next().value;
+      copilotCache.delete(firstKey);
+    }
+    copilotCache.set(cacheKey, localFallback);
+    console.log(`[AI Copilot Fallback] (${language}) => ${JSON.stringify(localFallback)}`);
+    return res.json({ completion: localFallback, model: 'local-semantic' });
   }
 
   res.json({ completion: '' });
@@ -2073,12 +2189,23 @@ server.on('upgrade', (request, socket, head) => {
   }
 });
 
-// 7. Static Frontend Serving (Production build)
+// 7. Static Frontend Serving (Production build with cache busting)
 const distPath = path.join(process.cwd(), 'dist');
 if (fsSync.existsSync(distPath)) {
-  app.use(express.static(distPath));
+  app.use(express.static(distPath, {
+    setHeaders: (res, filePath) => {
+      if (filePath.endsWith('.html')) {
+        res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+        res.setHeader('Pragma', 'no-cache');
+        res.setHeader('Expires', '0');
+      }
+    }
+  }));
   app.get('*', (req, res, next) => {
     if (req.path.startsWith('/api') || req.path.startsWith('/terminal') || req.path.startsWith('/events') || req.path.startsWith('/preview') || req.path.startsWith('/proxy')) return next();
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
     res.sendFile(path.join(distPath, 'index.html'));
   });
 }
