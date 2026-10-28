@@ -54,7 +54,7 @@ interface SidebarProps {
   onRenameItem: (oldPath: string, newPath: string) => Promise<void>;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({
+export const Sidebar: React.FC<SidebarProps> = React.memo(({
   tree,
   activeFilePath,
   gitFiles,
@@ -185,7 +185,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
         >
           <GitBranch className="w-5 h-5" />
           {gitFiles.length > 0 && (
-            <span className="absolute top-1 right-1 px-1 py-0.2 bg-[var(--accent-color)] text-[var(--accent-text)] text-[9px] font-bold rounded-full min-w-[14px] text-center">
+            <span className="absolute top-1 right-1 px-1 py-0.5 bg-[var(--accent-color)] text-[var(--accent-text)] text-[9px] font-bold rounded-full min-w-[14px] text-center">
               {gitFiles.length}
             </span>
           )}
@@ -390,7 +390,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                     <div className="space-y-1">
                       <div className="flex items-center justify-between text-[11px] text-emerald-400 font-medium px-1">
                         <span>Staged Changes</span>
-                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full">
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.5 rounded-full">
                           {gitFiles.filter(f => f.staged).length}
                         </span>
                       </div>
@@ -428,7 +428,7 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   <div className="space-y-1">
                     <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] font-medium px-1">
                       <span>Changes</span>
-                      <span className="text-[10px] bg-[var(--bg-hover)] px-1.5 py-0.2 rounded-full">
+                      <span className="text-[10px] bg-[var(--bg-hover)] px-1.5 py-0.5 rounded-full">
                         {gitFiles.filter(f => !f.staged).length}
                       </span>
                     </div>
@@ -638,4 +638,4 @@ export const Sidebar: React.FC<SidebarProps> = ({
       </div>
     </div>
   );
-};
+});

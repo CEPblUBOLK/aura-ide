@@ -42,11 +42,10 @@ export function registerAiInlineCopilot(monaco: any) {
           if (lastResult.text.startsWith(typedSince)) {
             const remainder = lastResult.text.substring(typedSince.length);
             if (remainder) {
-              const maxCol = model.getLineMaxColumn(position.lineNumber);
               return {
                 items: [{
                   insertText: remainder,
-                  range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+                  range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
                 }],
                 enableForwardStability: true
               };
@@ -79,11 +78,10 @@ export function registerAiInlineCopilot(monaco: any) {
       const cacheKey = `${prefix.slice(-200)}:::${suffix.slice(0, 100)}`;
       if (memoryCache.has(cacheKey)) {
         const cached = memoryCache.get(cacheKey)!;
-        const maxCol = model.getLineMaxColumn(position.lineNumber);
         return {
           items: [{
             insertText: cached,
-            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
           }],
           enableForwardStability: true
         };
@@ -131,11 +129,10 @@ export function registerAiInlineCopilot(monaco: any) {
           modelUri
         };
 
-        const maxCol = model.getLineMaxColumn(position.lineNumber);
         return {
           items: [{
             insertText: text,
-            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, maxCol)
+            range: new monaco.Range(position.lineNumber, position.column, position.lineNumber, position.column)
           }],
           enableForwardStability: true
         };

@@ -25,7 +25,7 @@ interface FileTreeProps {
   onRenameItem: (oldPath: string, newPath: string) => Promise<void>;
 }
 
-export const FileTree: React.FC<FileTreeProps> = ({
+export const FileTree: React.FC<FileTreeProps> = React.memo(({
   tree,
   activeFilePath,
   onFileSelect,
@@ -97,15 +97,20 @@ export const FileTree: React.FC<FileTreeProps> = ({
   };
 
   const submitRename = async (oldPath: string) => {
-    if (!renameValue.trim() || renameValue === oldPath.split(/[/\\]/).pop()) {
+    const trimmed = renameValue.trim();
+    const currentName = oldPath.split(/[/\\]/).pop() || '';
+    if (!trimmed || trimmed === currentName) {
       setRenamingPath(null);
       return;
     }
-    const parentDir = oldPath.substring(0, Math.max(oldPath.lastIndexOf('/'), oldPath.lastIndexOf('\\')));
-    const separator = oldPath.includes('\\') ? '\\' : '/';
-    const newPath = `${parentDir}${separator}${renameValue.trim()}`;
-    await onRenameItem(oldPath, newPath);
+
+    const lastSlashIndex = Math.max(oldPath.lastIndexOf('/'), oldPath.lastIndexOf('\\'));
+    const newPath = lastSlashIndex >= 0
+      ? `${oldPath.substring(0, lastSlashIndex + 1)}${trimmed}`
+      : trimmed;
+
     setRenamingPath(null);
+    await onRenameItem(oldPath, newPath);
   };
 
   const renderNode = (node: FileNode, depth: number = 0) => {
@@ -151,9 +156,16 @@ export const FileTree: React.FC<FileTreeProps> = ({
                   autoFocus
                   value={renameValue}
                   onChange={(e) => setRenameValue(e.target.value)}
+                  onBlur={() => submitRename(node.path)}
                   onKeyDown={(e) => {
-                    if (e.key === 'Enter') submitRename(node.path);
-                    if (e.key === 'Escape') setRenamingPath(null);
+                    if (e.key === 'Enter') {
+                      e.preventDefault();
+                      submitRename(node.path);
+                    }
+                    if (e.key === 'Escape') {
+                      e.preventDefault();
+                      setRenamingPath(null);
+                    }
                   }}
                   className="bg-[var(--bg-primary)] border border-[var(--accent-color)] rounded px-1.5 py-0.5 text-xs text-[var(--text-primary)] outline-none w-28"
                 />
@@ -316,4 +328,4 @@ export const FileTree: React.FC<FileTreeProps> = ({
       </div>
     </div>
   );
-};
+});

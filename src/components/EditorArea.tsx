@@ -39,7 +39,11 @@ interface EditorAreaProps {
   insertCodeAction?: { code: string; timestamp: number } | null;
 }
 
+let areThemesRegistered = false;
 export const registerMonacoThemes = (monaco: any) => {
+  if (areThemesRegistered || !monaco) return;
+  areThemesRegistered = true;
+
   monaco.editor.defineTheme('macos-dark', {
     base: 'vs-dark',
     inherit: true,
@@ -564,7 +568,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
             <select
               value={tab.id}
               onChange={(e) => onSelectSplitTab?.(e.target.value)}
-              className="ml-2 bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded px-1.5 py-0.2 text-[10px] font-sans outline-none"
+              className="ml-2 bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded px-1.5 py-0.5 text-[10px] font-sans outline-none"
               title="Выбрать вкладку для правого окна"
             >
               {tabs.filter(t => t.id !== activeTabId && !t.isDiff).map(t => (
@@ -577,10 +581,12 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
         {/* Monaco Editor Canvas */}
         <div className="flex-1 w-full h-full">
           <Editor
-            key={`${isSecondary ? 'split' : 'main'}-${tab.id}`}
+            key={isSecondary ? 'split-editor' : 'main-editor'}
             path={isSecondary ? `split://${tab.path}` : tab.path}
+            defaultValue={tab.content}
             value={tab.content}
             language={tab.language}
+            keepCurrentModel={true}
             beforeMount={registerMonacoThemes}
             theme={settings.theme}
             onChange={(val) => onContentChange(tab.id, val || '')}

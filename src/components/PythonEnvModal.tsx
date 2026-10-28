@@ -174,7 +174,7 @@ export const PythonEnvModal: React.FC<PythonEnvModalProps> = ({
                       <div className="truncate">
                         <div className="text-xs font-semibold flex items-center space-x-1.5">
                           <span>{env.name}</span>
-                          <span className="text-[10px] px-1.5 py-0.2 rounded bg-emerald-500/20 text-emerald-400 font-mono">
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-500/20 text-emerald-400 font-mono">
                             venv
                           </span>
                         </div>

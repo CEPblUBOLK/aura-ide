@@ -50,7 +50,7 @@ interface TitleBarProps {
   onOpenFolderDialog: () => void;
 }
 
-export const TitleBar: React.FC<TitleBarProps> = ({
+export const TitleBar: React.FC<TitleBarProps> = React.memo(({
   projectName,
   activeFilePath,
   activeTab,
@@ -415,4 +415,4 @@ export const TitleBar: React.FC<TitleBarProps> = ({
       </div>
     </header>
   );
-};
+});

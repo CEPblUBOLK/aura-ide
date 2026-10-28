@@ -275,9 +275,9 @@ namespace AuraIDE {
 
             win.Loaded += async (s, e) => {
                 try {
-                    // Poll server port in background task while WebView2 environment is created
+                    // Poll server port in background task while WebView2 environment is created (up to 10 seconds)
                     var portTask = Task.Run(() => {
-                        for (int i = 0; i < 60; i++) {
+                        for (int i = 0; i < 200; i++) {
                             if (IsPortOpen("127.0.0.1", port)) return true;
                             Thread.Sleep(50);
                         }
@@ -290,7 +290,7 @@ namespace AuraIDE {
                     var envOptions = new CoreWebView2EnvironmentOptions();
                     var sharedEnv = await CoreWebView2Environment.CreateAsync(null, userDataFolder, envOptions);
 
-                    await portTask;
+                    bool serverReady = await portTask;
                     await webView.EnsureCoreWebView2Async(sharedEnv);
                     webView.DefaultBackgroundColor = System.Drawing.Color.FromArgb(24, 24, 26);
                     webView.CoreWebView2.Settings.IsStatusBarEnabled = false;
@@ -317,12 +317,11 @@ namespace AuraIDE {
                                 toggleFullscreen();
                             } else if (msg == "window-drag") {
                                 win.Dispatcher.Invoke(() => {
-                                    IntPtr hwnd = new WindowInteropHelper(win).Handle;
-                                    ReleaseCapture();
-                                    POINT pt;
-                                    GetCursorPos(out pt);
-                                    IntPtr lParam = (IntPtr)((pt.Y << 16) | (pt.X & 0xFFFF));
-                                    SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, lParam);
+                                    try {
+                                        IntPtr hwnd = new WindowInteropHelper(win).Handle;
+                                        ReleaseCapture();
+                                        SendMessage(hwnd, WM_NCLBUTTONDOWN, (IntPtr)HTCAPTION, IntPtr.Zero);
+                                    } catch {}
                                 });
                             } else if (msg == "dialog-open-folder") {
                                 win.Dispatcher.Invoke(() => {
@@ -356,7 +355,12 @@ namespace AuraIDE {
                         } catch {}
                     };
 
-                    webView.CoreWebView2.Navigate("http://localhost:3001");
+                    if (serverReady) {
+                        webView.CoreWebView2.Navigate("http://localhost:3001");
+                        Task.Delay(5000).ContinueWith(t => TrimHostMemory());
+                    } else {
+                        MessageBox.Show("Сервер Aura IDE (Node.js) не ответил на порту 3001.", "Ошибка запуска", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    }
                 } catch (Exception ex) {
                     MessageBox.Show("Ошибка запуска WebView2: " + ex.Message, "Aura IDE Error", MessageBoxButton.OK, MessageBoxImage.Error);
                 }

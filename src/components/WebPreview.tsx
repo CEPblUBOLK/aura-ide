@@ -138,7 +138,7 @@ export const WebPreview: React.FC<WebPreviewProps> = ({
       <div
         onMouseDown={handleMouseDown}
         title="Drag to resize Web Browser Preview"
-        className="absolute top-0 bottom-0 -left-1.5 w-3 cursor-col-resize z-50 flex items-center justify-center group hover:bg-[var(--accent-color)]/20 transition-colors"
+        className="absolute top-0 bottom-0 -left-1.5 w-3 cursor-col-resize z-50 flex items-center justify-center group hover:bg-[var(--accent-subtle)] transition-colors"
       >
         <div className="w-1 h-8 rounded-full bg-[var(--border-subtle)] group-hover:bg-[var(--accent-color)] transition-colors" />
       </div>
@@ -227,6 +227,17 @@ export const WebPreview: React.FC<WebPreviewProps> = ({
               <Smartphone className="w-3 h-3" />
             </button>
           </div>
+
+          <button
+            onClick={() => {
+              setUseProxy(p => !p);
+              setIframeKey(k => k + 1);
+            }}
+            title={useProxy ? "Disable Proxy Mode (CORS Bypass: ON)" : "Enable Proxy Mode (CORS / X-Frame Bypass)"}
+            className={`p-1 rounded transition-colors ${useProxy ? 'bg-emerald-500/20 text-emerald-400 border border-emerald-500/30' : 'hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)]'}`}
+          >
+            <ShieldCheck className="w-3.5 h-3.5" />
+          </button>
 
           <button
             onClick={openExternal}

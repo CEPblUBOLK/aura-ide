@@ -1,7 +1,7 @@
 import React, { useEffect, useRef, useState, useCallback } from 'react';
-import { Terminal as XTerm } from 'xterm';
-import { FitAddon } from 'xterm-addon-fit';
-import 'xterm/css/xterm.css';
+import { Terminal as XTerm } from '@xterm/xterm';
+import { FitAddon } from '@xterm/addon-fit';
+import '@xterm/xterm/css/xterm.css';
 import { 
   Terminal as TerminalIcon, 
   X, 
@@ -332,7 +332,7 @@ export const getTerminalTheme = (t: ThemeMode) => {
   }
 };
 
-export const TerminalPanel: React.FC<TerminalPanelProps> = ({
+export const TerminalPanel: React.FC<TerminalPanelProps> = React.memo(({
   isOpen,
   onClose,
   height,
@@ -584,14 +584,17 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
 
     const timer = setTimeout(() => {
       if (!sessionsRef.current.has(activeTabId)) {
-        initSession(activeTabId);
+        initSession(activeTabId, activeTabId === 'run' ? (pendingRunCommandRef.current || undefined) : undefined);
       } else {
         safeFit(activeTabId);
+        if (activeTabId === 'run') {
+          tryExecutePending();
+        }
       }
     }, 60);
 
     return () => clearTimeout(timer);
-  }, [isOpen, activeTabId, initSession, safeFit]);
+  }, [isOpen, activeTabId, initSession, safeFit, tryExecutePending]);
 
   // Only dispose all sessions on COMPLETE component unmount
   useEffect(() => {
@@ -874,13 +877,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
             ref={(el) => {
               if (el) {
                 containerMapRef.current.set(tab.id, el);
-                if (isOpen && tab.id === activeTabId) {
-                  if (!sessionsRef.current.has(tab.id)) {
-                    initSession(tab.id, tab.id === 'run' ? (pendingRunCommandRef.current || undefined) : undefined);
-                  } else if (tab.id === 'run') {
-                    tryExecutePending();
-                  }
-                }
               } else {
                 containerMapRef.current.delete(tab.id);
               }
@@ -896,4 +892,4 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
       </div>
     </div>
   );
-};
+});

@@ -389,66 +389,73 @@ export const App: React.FC = () => {
     const flags = cfg?.compilerFlags ? ` ${cfg.compilerFlags}` : '';
     const exe = cfg?.compilerPath || '';
 
-    // Safely resolve working directory and filename for execution (avoiding invalid .\\F:\... paths)
-    const targetFile = (tab.path || tab.relativePath || tab.name).replace(/\//g, '\\');
+    // Safely resolve working directory and filename for execution (cross-platform compatible)
+    const targetFile = tab.path || tab.relativePath || tab.name;
     const lastSlash = Math.max(targetFile.lastIndexOf('\\'), targetFile.lastIndexOf('/'));
     const targetDir = lastSlash > 0 ? targetFile.slice(0, lastSlash) : '';
     const fileNameOnly = lastSlash > 0 ? targetFile.slice(lastSlash + 1) : targetFile;
-    const cdCmd = targetDir && isWindows ? `Set-Location -LiteralPath "${targetDir}"; ` : '';
+    const cdCmd = targetDir
+      ? (isWindows ? `Set-Location -LiteralPath "${targetDir}"; ` : `cd "${targetDir}" && `)
+      : '';
+    const fileRef = isWindows ? `.\\"${fileNameOnly}"` : `./"${fileNameOnly}"`;
 
     if (cfg?.compilerPath || (lang === 'python' && activePythonEnv)) {
       if (lang === 'python') {
         const pyExe = activePythonEnv?.path || cfg?.compilerPath || 'python';
         const py = isWindows && (pyExe.includes(' ') || pyExe.includes('\\')) ? `& "${pyExe}"` : pyExe;
-        commandToRun = `${cdCmd}${py} ".\\${fileNameOnly}"${args}`;
+        commandToRun = `${cdCmd}${py} ${fileRef}${args}`;
       } else if (lang === 'rust') {
         if (exe.includes('rustc')) {
-          commandToRun = `${cdCmd}rustc ".\\${fileNameOnly}"${flags} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe"${args} }`;
+          commandToRun = isWindows
+            ? `${cdCmd}rustc ${fileRef}${flags} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe"${args} }`
+            : `${cdCmd}rustc ${fileRef}${flags} -o "${baseName}" && ./"${baseName}"${args}`;
         } else {
           commandToRun = `cargo run${flags}${cfg.args ? ' -- ' + cfg.args : ''}`;
         }
       } else if (lang === 'cpp' || lang === 'c') {
         const cc = isWindows && (exe.includes(' ') || exe.includes('\\')) ? `& "${exe}"` : exe;
-        commandToRun = `${cdCmd}${cc} ".\\${fileNameOnly}"${flags} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe"${args} }`;
+        commandToRun = isWindows
+          ? `${cdCmd}${cc} ${fileRef}${flags} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe"${args} }`
+          : `${cdCmd}${cc} ${fileRef}${flags} -o "${baseName}" && ./"${baseName}"${args}`;
       } else if (lang === 'go') {
-        commandToRun = `${cdCmd}go run ".\\${fileNameOnly}"${args}`;
+        commandToRun = `${cdCmd}go run ${fileRef}${args}`;
       } else if (lang === 'javascript') {
-        commandToRun = `${cdCmd}node ".\\${fileNameOnly}"${args}`;
+        commandToRun = `${cdCmd}node ${fileRef}${args}`;
       } else if (lang === 'typescript') {
-        commandToRun = `${cdCmd}npx tsx ".\\${fileNameOnly}"${args}`;
+        commandToRun = `${cdCmd}npx tsx ${fileRef}${args}`;
       } else if (lang === 'csharp') {
         commandToRun = `dotnet run${args}`;
       } else {
         const cmd = isWindows && (exe.includes(' ') || exe.includes('\\')) ? `& "${exe}"` : exe;
-        commandToRun = `${cdCmd}${cmd} ".\\${fileNameOnly}"${args}`;
+        commandToRun = `${cdCmd}${cmd} ${fileRef}${args}`;
       }
     } else {
       // Defaults if no custom configuration saved
       if (lang === 'python') {
         const pyExe = activePythonEnv ? `& "${activePythonEnv.path}"` : 'python';
-        commandToRun = `${cdCmd}${pyExe} ".\\${fileNameOnly}"`;
+        commandToRun = `${cdCmd}${pyExe} ${fileRef}`;
       } else if (lang === 'rust' || rustStatus?.hasCargo) {
         commandToRun = 'cargo run';
       } else if (lang === 'c') {
         commandToRun = isWindows 
-          ? `${cdCmd}gcc ".\\${fileNameOnly}" -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe" }`
-          : `gcc "${tab.relativePath}" -o "${baseName}" && ./"${baseName}"`;
+          ? `${cdCmd}gcc ${fileRef} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe" }`
+          : `${cdCmd}gcc ${fileRef} -o "${baseName}" && ./"${baseName}"`;
       } else if (lang === 'cpp') {
         commandToRun = isWindows 
-          ? `${cdCmd}g++ ".\\${fileNameOnly}" -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe" }`
-          : `g++ "${tab.relativePath}" -o "${baseName}" && ./"${baseName}"`;
+          ? `${cdCmd}g++ ${fileRef} -o "${baseName}.exe"; if ($?) { .\\"${baseName}.exe" }`
+          : `${cdCmd}g++ ${fileRef} -o "${baseName}" && ./"${baseName}"`;
       } else if (lang === 'go') {
-        commandToRun = `${cdCmd}go run ".\\${fileNameOnly}"`;
+        commandToRun = `${cdCmd}go run ${fileRef}`;
       } else if (lang === 'java') {
-        commandToRun = `${cdCmd}java ".\\${fileNameOnly}"`;
+        commandToRun = `${cdCmd}java ${fileRef}`;
       } else if (lang === 'csharp') {
         commandToRun = 'dotnet run';
       } else if (lang === 'javascript') {
-        commandToRun = `${cdCmd}node ".\\${fileNameOnly}"`;
+        commandToRun = `${cdCmd}node ${fileRef}`;
       } else if (lang === 'typescript') {
-        commandToRun = `${cdCmd}npx tsx ".\\${fileNameOnly}"`;
+        commandToRun = `${cdCmd}npx tsx ${fileRef}`;
       } else if (lang === 'shell') {
-        commandToRun = isWindows ? `${cdCmd}& ".\\${fileNameOnly}"` : `bash "${tab.relativePath}"`;
+        commandToRun = isWindows ? `${cdCmd}& ${fileRef}` : `${cdCmd}bash ${fileRef}`;
       } else {
         commandToRun = `echo "Running ${tab.name}"`;
       }
@@ -795,7 +802,7 @@ export const App: React.FC = () => {
     await loadGitStatus();
   };
 
-  const handleSelectWorkspace = async (newPath: string) => {
+  const handleSelectWorkspace = useCallback(async (newPath: string) => {
     const res = await fetch('/api/workspace', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -809,7 +816,7 @@ export const App: React.FC = () => {
     setActiveTabId(undefined);
     await loadTree();
     await loadGitStatus();
-  };
+  }, []);
 
   const isDesktop = typeof window !== 'undefined' && Boolean((window as any).chrome?.webview);
   const handleCommandExecuted = useCallback(() => setPendingCommand(null), []);

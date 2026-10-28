@@ -289,3 +289,9 @@
   -ms-overflow-style: none;
   scrollbar-width: none;
 }
+
+/* Styling native select dropdown options for dark & light themes in WebView2 */
+select option {
+  background-color: var(--bg-secondary);
+  color: var(--text-primary);
+}

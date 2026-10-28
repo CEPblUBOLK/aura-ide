@@ -27,7 +27,7 @@ interface StatusBarProps {
   onToggleCopilot?: () => void;
 }
 
-export const StatusBar: React.FC<StatusBarProps> = ({
+export const StatusBar: React.FC<StatusBarProps> = React.memo(({
   activeTab,
   gitBranch,
   isGitRepo,
@@ -46,6 +46,9 @@ export const StatusBar: React.FC<StatusBarProps> = ({
     if (!activeTab?.content) return { lines: 0, words: 0 };
     const content = activeTab.content;
     const lines = content.split('\n').length;
+    if (content.length > 100000) {
+      return { lines, words: Math.round(content.length / 6) };
+    }
     const trimmed = content.trim();
     const words = trimmed ? trimmed.split(/\s+/).length : 0;
     return { lines, words };
@@ -156,4 +159,4 @@ export const StatusBar: React.FC<StatusBarProps> = ({
       </div>
     </footer>
   );
-};
+});

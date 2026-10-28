@@ -54,7 +54,7 @@ interface AiPanelProps {
   onDiffCode?: (code: string) => void;
 }
 
-export const AiPanel: React.FC<AiPanelProps> = ({
+export const AiPanel: React.FC<AiPanelProps> = React.memo(({
   isOpen,
   onClose,
   width = 460,
@@ -723,4 +723,4 @@ export const AiPanel: React.FC<AiPanelProps> = ({
       </div>
     </div>
   );
-};
+});
