@@ -610,7 +610,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
               inlineSuggest: {
                 enabled: settings.aiCopilotEnabled !== false,
                 mode: 'prefix',
-                showToolbar: 'always',
+                showToolbar: 'onHover',
                 suppressSuggestions: false,
               },
               quickSuggestions: { other: true, comments: false, strings: true },
@@ -625,7 +625,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
                 shareSuggestSelections: true,
                 showIcons: true,
                 showStatusBar: true,
-                preview: true,
+                preview: false,
               },
             }}
           />

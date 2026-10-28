@@ -60,11 +60,9 @@ export function registerAiInlineCopilot(monaco: any) {
         return { items: [] };
       }
 
-      // 2. Smart debounce considering rate-limit window
+      // 2. Fast 250ms debounce after user pauses typing
       if (!isExplicit) {
-        const elapsedSinceLastFetch = Date.now() - lastFetchTime;
-        const requiredWait = Math.max(350, 1200 - elapsedSinceLastFetch);
-        await new Promise((resolve) => setTimeout(resolve, requiredWait));
+        await new Promise((resolve) => setTimeout(resolve, 250));
         if (token.isCancellationRequested) return { items: [] };
       }
 
@@ -113,8 +111,18 @@ export function registerAiInlineCopilot(monaco: any) {
         if (token.isCancellationRequested || !res.ok) return { items: [] };
 
         const data = await res.json();
-        const text = data.completion;
+        let text = data.completion;
         if (!text || typeof text !== 'string' || !text.trim()) return { items: [] };
+
+        // Ensure raw completion does not repeat line before cursor
+        const lineUpToCursor = lineContent.substring(0, position.column - 1);
+        if (text.startsWith(lineUpToCursor)) {
+          text = text.slice(lineUpToCursor.length);
+        } else if (lineUpToCursor.trim() && text.startsWith(lineUpToCursor.trimStart())) {
+          text = text.slice(lineUpToCursor.trimStart().length);
+        }
+
+        if (!text.trim()) return { items: [] };
 
         memoryCache.set(cacheKey, text);
         if (memoryCache.size > 150) {

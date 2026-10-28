@@ -668,8 +668,24 @@ app.get('/api/python/environments', async (req, res) => {
   }
 });
 
-// AI Inline Code Autocomplete (Copilot style using Gemini 3.1 Flash-Lite)
+// AI Inline Code Autocomplete (GitHub Copilot style using Gemini Flash with multi-model fallback)
 const copilotCache = new Map();
+
+function cleanCopilotCompletion(raw, prefix) {
+  let cleaned = (raw || '').replace(/^```[a-zA-Z]*\r?\n?/g, '').replace(/```\s*$/g, '');
+  if (prefix && cleaned.startsWith(prefix)) {
+    cleaned = cleaned.slice(prefix.length);
+  } else {
+    const lastLine = (prefix ? prefix.split('\n').pop() : '') || '';
+    if (lastLine.trim() && cleaned.startsWith(lastLine)) {
+      cleaned = cleaned.slice(lastLine.length);
+    } else if (lastLine.trim() && cleaned.startsWith(lastLine.trimStart())) {
+      cleaned = cleaned.slice(lastLine.trimStart().length);
+    }
+  }
+  cleaned = cleaned.replace(/^(Here is|To complete|You can|Sure|Certainly|Note:).*?\r?\n/i, '');
+  return cleaned;
+}
 
 app.post('/api/ai/inline-complete', async (req, res) => {
   const { prefix, suffix, language, filename, apiKey: customKey } = req.body;
@@ -684,98 +700,89 @@ app.post('/api/ai/inline-complete', async (req, res) => {
   if (!apiKey) {
     return res.status(401).json({ error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in .env or environment.' });
   }
-  const model = 'gemini-3.1-flash-lite';
 
-  const prompt = `You are a lightning-fast code completion engine like GitHub Copilot.
-Your job is to provide the continuation of code to insert at <CURSOR>.
-CRITICAL RULES:
-1. Return ONLY the raw code to be inserted at <CURSOR>.
-2. Do NOT output markdown code blocks (no \`\`\`), no explanations, no chat commentary.
-3. Do NOT repeat code that is already in Prefix or Suffix.
-4. Output between 1 to 4 lines of clean, correct continuation.
+  const models = [
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-flash-lite-latest',
+    'gemini-3.5-flash-lite'
+  ];
 
+  const prompt = `You are GitHub Copilot inline code completion engine.
+Output ONLY the raw code continuation that immediately follows the cursor.
+NEVER explain. NEVER use markdown fences. DO NOT repeat the code before cursor.
 Language: ${language || 'plaintext'}
 File: ${filename || 'code'}
---- Code Before Cursor ---
-${prefix ? prefix.slice(-1500) : ''}
-<CURSOR>
---- Code After Cursor ---
-${suffix ? suffix.slice(0, 500) : ''}
---- End Code ---
-`;
 
-  const sendGeminiRequest = () => {
-    return new Promise((resolve) => {
+Context:
+${prefix ? prefix.slice(-1000) : ''}<CURSOR>${suffix ? suffix.slice(0, 300) : ''}
+
+Raw continuation at <CURSOR>:`;
+
+  for (const model of models) {
+    try {
+      const isGemini3 = model.includes('3-') || model.includes('3.');
       const body = JSON.stringify({
         contents: [{ parts: [{ text: prompt }] }],
         generationConfig: {
-          maxOutputTokens: 48,
+          maxOutputTokens: 64,
           temperature: 0.1,
-          thinkingConfig: { thinkingBudget: 0 }
+          ...(isGemini3 ? { thinkingConfig: { thinkingLevel: 'MINIMAL' } } : {})
         }
       });
 
-      const httpsReq = https.request({
-        hostname: 'generativelanguage.googleapis.com',
-        path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        },
-        timeout: 10000
-      }, (apiRes) => {
-        let data = '';
-        apiRes.on('data', chunk => data += chunk);
-        apiRes.on('end', () => {
-          resolve({ statusCode: apiRes.statusCode, data });
+      const sendRequest = () => {
+        return new Promise((resolve) => {
+          const httpsReq = https.request({
+            hostname: 'generativelanguage.googleapis.com',
+            path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body)
+            },
+            timeout: 4500
+          }, (apiRes) => {
+            let d = '';
+            apiRes.on('data', chunk => d += chunk);
+            apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
+          });
+
+          httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
+          httpsReq.on('timeout', () => {
+            httpsReq.destroy();
+            resolve({ statusCode: 504, timeout: true });
+          });
+
+          httpsReq.write(body);
+          httpsReq.end();
         });
-      });
+      };
 
-      httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
-      httpsReq.on('timeout', () => {
-        httpsReq.destroy();
-        resolve({ statusCode: 504, timeout: true });
-      });
-
-      httpsReq.write(body);
-      httpsReq.end();
-    });
-  };
-
-  try {
-    let result = await sendGeminiRequest();
-    // Quick retry if Google API has a temporary 503 spike
-    if (result.statusCode === 503) {
-      await new Promise(r => setTimeout(r, 350));
-      result = await sendGeminiRequest();
-    }
-
-    if (result.data) {
-      try {
+      const result = await sendRequest();
+      if (result.statusCode === 200 && result.data) {
         const json = JSON.parse(result.data);
-        let rawText = json.candidates?.[0]?.content?.parts?.[0]?.text || '';
-        rawText = rawText.replace(/^```[a-zA-Z]*\r?\n?/g, '').replace(/```\s*$/g, '');
-
-        if (copilotCache.size > 150) {
-          const firstKey = copilotCache.keys().next().value;
-          copilotCache.delete(firstKey);
+        const rawText = json.candidates?.[0]?.content?.parts?.[0]?.text;
+        if (rawText && typeof rawText === 'string') {
+          const cleaned = cleanCopilotCompletion(rawText, prefix);
+          if (cleaned.trim()) {
+            if (copilotCache.size > 200) {
+              const firstKey = copilotCache.keys().next().value;
+              copilotCache.delete(firstKey);
+            }
+            copilotCache.set(cacheKey, cleaned);
+            console.log(`[AI Copilot] ${model} (${language}) => ${JSON.stringify(cleaned)}`);
+            return res.json({ completion: cleaned, model });
+          }
         }
-        if (rawText.trim()) {
-          copilotCache.set(cacheKey, rawText);
-        }
-
-        console.log(`[AI Copilot] ${language} => ${JSON.stringify(rawText)}`);
-        return res.json({ completion: rawText });
-      } catch {}
-    }
-    res.json({ completion: '' });
-  } catch (err) {
-    res.json({ completion: '', error: err.message });
+      }
+    } catch {}
   }
+
+  res.json({ completion: '' });
 });
 
-// Dedicated Conversational AI Agent endpoint (Gemini 3.1 Flash-Lite)
+// Dedicated Conversational AI Agent endpoint (with automatic model fallback)
 app.post('/api/ai/chat', async (req, res) => {
   const { messages, context, apiKey: customKey } = req.body;
   if (!messages || !Array.isArray(messages) || messages.length === 0) {
@@ -786,7 +793,13 @@ app.post('/api/ai/chat', async (req, res) => {
   if (!apiKey) {
     return res.status(401).json({ error: 'GEMINI_API_KEY is not configured. Please set GEMINI_API_KEY in .env or environment.' });
   }
-  const model = 'gemini-3.1-flash-lite';
+
+  const chatModels = [
+    'gemini-3-flash-preview',
+    'gemini-3.1-flash-lite',
+    'gemini-3.8-flash',
+    'gemini-flash-latest'
+  ];
 
   let systemPrompt = 'You are Aura AI, an expert programming assistant built directly into Aura IDE. You write concise, high-performance, and correct code. When asked in Russian, respond in clean natural Russian. Format code blocks with appropriate language tags. STRICT RULE: NEVER use any emojis or emoji symbols in any part of your response. Use standard markdown bold, lists, and code blocks.';
   if (context && context.code) {
@@ -804,64 +817,57 @@ app.post('/api/ai/chat', async (req, res) => {
     };
   });
 
-  const sendRequest = () => {
-    return new Promise((resolve) => {
-      const body = JSON.stringify({
-        contents: geminiContents,
-        generationConfig: {
-          maxOutputTokens: 2048,
-          temperature: 0.4
-        }
-      });
+  for (const model of chatModels) {
+    try {
+      const sendRequest = () => {
+        return new Promise((resolve) => {
+          const body = JSON.stringify({
+            contents: geminiContents,
+            generationConfig: {
+              maxOutputTokens: 2048,
+              temperature: 0.4
+            }
+          });
 
-      const httpsReq = https.request({
-        hostname: 'generativelanguage.googleapis.com',
-        path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        },
-        timeout: 25000
-      }, (apiRes) => {
-        let d = '';
-        apiRes.on('data', chunk => d += chunk);
-        apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
-      });
+          const httpsReq = https.request({
+            hostname: 'generativelanguage.googleapis.com',
+            path: `/v1beta/models/${model}:generateContent?key=${apiKey}`,
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'Content-Length': Buffer.byteLength(body)
+            },
+            timeout: 20000
+          }, (apiRes) => {
+            let d = '';
+            apiRes.on('data', chunk => d += chunk);
+            apiRes.on('end', () => resolve({ statusCode: apiRes.statusCode, data: d }));
+          });
 
-      httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
-      httpsReq.on('timeout', () => {
-        httpsReq.destroy();
-        resolve({ statusCode: 504, timeout: true });
-      });
+          httpsReq.on('error', (err) => resolve({ statusCode: 500, error: err.message }));
+          httpsReq.on('timeout', () => {
+            httpsReq.destroy();
+            resolve({ statusCode: 504, timeout: true });
+          });
 
-      httpsReq.write(body);
-      httpsReq.end();
-    });
-  };
+          httpsReq.write(body);
+          httpsReq.end();
+        });
+      };
 
-  try {
-    let result = await sendRequest();
-    if (result.statusCode === 503) {
-      await new Promise(r => setTimeout(r, 400));
-      result = await sendRequest();
-    }
-
-    if (result.data) {
-      try {
+      const result = await sendRequest();
+      if (result.statusCode === 200 && result.data) {
         const json = JSON.parse(result.data);
         let replyText = json.candidates?.[0]?.content?.parts?.[0]?.text;
         if (replyText) {
-          // Strictly strip any unicode emojis
           replyText = replyText.replace(/[\u{1F300}-\u{1F9FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '');
-          return res.json({ reply: replyText });
+          return res.json({ reply: replyText, model });
         }
-      } catch {}
-    }
-    res.status(result.statusCode || 500).json({ error: 'Failed to generate response from AI model' });
-  } catch (err) {
-    res.status(500).json({ error: err.message });
+      }
+    } catch {}
   }
+
+  res.status(500).json({ error: 'Failed to generate response from AI models' });
 });
 
 // Helper for finding executable paths on system
