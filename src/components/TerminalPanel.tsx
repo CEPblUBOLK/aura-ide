@@ -361,11 +361,16 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
   const themeRef = useRef(theme);
   themeRef.current = theme;
 
-  const getWsUrl = () => {
+  const onOpenFileByPathRef = useRef(onOpenFileByPath);
+  useEffect(() => {
+    onOpenFileByPathRef.current = onOpenFileByPath;
+  }, [onOpenFileByPath]);
+
+  const getWsUrl = useCallback(() => {
     const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
     const host = window.location.port === '5173' ? `${window.location.hostname}:3001` : window.location.host;
     return `${protocol}//${host}/terminal`;
-  };
+  }, []);
 
   const safeFit = useCallback((tabId: string) => {
     const sess = sessionsRef.current.get(tabId);
@@ -464,7 +469,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                 range: { start: { x: startIdx, y: bufferLineNumber }, end: { x: endIdx, y: bufferLineNumber } },
                 text: m[0],
                 activate: () => {
-                  onOpenFileByPath(file, lineNum);
+                  onOpenFileByPathRef.current?.(file, lineNum);
                 }
               });
             }
@@ -477,7 +482,7 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
                 range: { start: { x: startIdx, y: bufferLineNumber }, end: { x: endIdx, y: bufferLineNumber } },
                 text: m[0],
                 activate: () => {
-                  onOpenFileByPath(file, lineNum);
+                  onOpenFileByPathRef.current?.(file, lineNum);
                 }
               });
             }
@@ -582,10 +587,6 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
         initSession(activeTabId);
       } else {
         safeFit(activeTabId);
-        const sess = sessionsRef.current.get(activeTabId);
-        if (sess) {
-          sess.term.focus();
-        }
       }
     }, 60);
 
@@ -751,7 +752,11 @@ export const TerminalPanel: React.FC<TerminalPanelProps> = ({
             return (
               <div
                 key={tab.id}
-                onClick={() => setActiveTabId(tab.id)}
+                onClick={() => {
+                  setActiveTabId(tab.id);
+                  const sess = sessionsRef.current.get(tab.id);
+                  sess?.term.focus();
+                }}
                 className={`flex items-center space-x-1.5 px-2.5 py-1 rounded-md cursor-pointer transition text-xs font-medium ${
                   isActive
                     ? 'bg-[var(--bg-hover)] text-[var(--text-primary)] shadow-sm border border-[var(--border-subtle)]'

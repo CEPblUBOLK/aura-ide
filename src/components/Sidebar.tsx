@@ -383,77 +383,109 @@ export const Sidebar: React.FC<SidebarProps> = ({
                   </button>
                 </div>
 
-                {/* Changed Files List */}
-                <div className="flex-1 overflow-y-auto space-y-1 pt-1">
-                  <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] font-medium px-1">
-                    <span>Changes</span>
-                    <span className="text-[10px] bg-[var(--bg-hover)] px-1.5 py-0.2 rounded-full">{gitFiles.length}</span>
-                  </div>
-
-                  {gitFiles.length === 0 ? (
-                    <div className="text-center py-6 text-xs text-[var(--text-secondary)]">
-                      No changes detected
-                    </div>
-                  ) : (
-                    gitFiles.map((file) => (
-                      <div
-                        key={file.file}
-                        onClick={() => onOpenDiff(file)}
-                        className="flex items-center justify-between p-1.5 rounded-md hover:bg-[var(--bg-hover)] cursor-pointer group text-xs text-[var(--text-primary)]"
-                        title="Click to view Side-by-Side Diff"
-                      >
-                        <div className="flex items-center space-x-1.5 truncate min-w-0 pr-1">
-                          {getFileIcon(file.file, false)}
-                          <span className="truncate">{file.file}</span>
-                        </div>
-                        <div className="flex items-center space-x-1 shrink-0" onClick={(e) => e.stopPropagation()}>
-                          {file.staged ? (
-                            onUnstageFile && (
+                {/* Staged & Unstaged Changes Lists */}
+                <div className="flex-1 overflow-y-auto space-y-3 pt-1">
+                  {/* Staged Changes */}
+                  {gitFiles.filter(f => f.staged).length > 0 && (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between text-[11px] text-emerald-400 font-medium px-1">
+                        <span>Staged Changes</span>
+                        <span className="text-[10px] bg-emerald-500/20 text-emerald-300 px-1.5 py-0.2 rounded-full">
+                          {gitFiles.filter(f => f.staged).length}
+                        </span>
+                      </div>
+                      {gitFiles.filter(f => f.staged).map((file) => (
+                        <div
+                          key={`staged-${file.file}`}
+                          onClick={() => onOpenDiff(file)}
+                          className="flex items-center justify-between p-1.5 rounded-md hover:bg-[var(--bg-hover)] cursor-pointer group text-xs text-[var(--text-primary)]"
+                          title="Click to view Side-by-Side Diff"
+                        >
+                          <div className="flex items-center space-x-1.5 truncate min-w-0 pr-1">
+                            {getFileIcon(file.file, false)}
+                            <span className="truncate">{file.file}</span>
+                          </div>
+                          <div className="flex items-center space-x-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {onUnstageFile && (
                               <button
                                 onClick={async () => { await onUnstageFile(file.file); onRefreshGit(); }}
-                                title="Unstage Changes"
+                                title="Unstage Changes (-)"
                                 className="p-0.5 rounded hover:bg-[var(--bg-active)] text-[var(--text-secondary)] hover:text-amber-400 opacity-0 group-hover:opacity-100 transition"
                               >
                                 <Minus className="w-3 h-3" />
                               </button>
-                            )
-                          ) : (
-                            onStageFile && (
+                            )}
+                            <span className="text-[10px] font-bold px-1.5 py-0.5 rounded text-emerald-400 bg-emerald-500/10">
+                              {file.status[0].toUpperCase()}
+                            </span>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+
+                  {/* Unstaged Changes */}
+                  <div className="space-y-1">
+                    <div className="flex items-center justify-between text-[11px] text-[var(--text-secondary)] font-medium px-1">
+                      <span>Changes</span>
+                      <span className="text-[10px] bg-[var(--bg-hover)] px-1.5 py-0.2 rounded-full">
+                        {gitFiles.filter(f => !f.staged).length}
+                      </span>
+                    </div>
+
+                    {gitFiles.filter(f => !f.staged).length === 0 && gitFiles.filter(f => f.staged).length === 0 ? (
+                      <div className="text-center py-6 text-xs text-[var(--text-secondary)]">
+                        No changes detected
+                      </div>
+                    ) : (
+                      gitFiles.filter(f => !f.staged).map((file) => (
+                        <div
+                          key={`unstaged-${file.file}`}
+                          onClick={() => onOpenDiff(file)}
+                          className="flex items-center justify-between p-1.5 rounded-md hover:bg-[var(--bg-hover)] cursor-pointer group text-xs text-[var(--text-primary)]"
+                          title="Click to view Side-by-Side Diff"
+                        >
+                          <div className="flex items-center space-x-1.5 truncate min-w-0 pr-1">
+                            {getFileIcon(file.file, false)}
+                            <span className="truncate">{file.file}</span>
+                          </div>
+                          <div className="flex items-center space-x-1 shrink-0" onClick={(e) => e.stopPropagation()}>
+                            {onStageFile && (
                               <button
                                 onClick={async () => { await onStageFile(file.file); onRefreshGit(); }}
-                                title="Stage Changes"
+                                title="Stage Changes (+)"
                                 className="p-0.5 rounded hover:bg-[var(--bg-active)] text-[var(--text-secondary)] hover:text-emerald-400 opacity-0 group-hover:opacity-100 transition"
                               >
                                 <Plus className="w-3 h-3" />
                               </button>
-                            )
-                          )}
-                          {onDiscardFile && (
-                            <button
-                              onClick={async () => {
-                                if (window.confirm(`Discard changes in ${file.file}?`)) {
-                                  await onDiscardFile(file.file, file.status);
-                                  onRefreshGit();
-                                }
-                              }}
-                              title="Discard Changes"
-                              className="p-0.5 rounded hover:bg-red-500/20 text-[var(--text-secondary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
-                            >
-                              <RotateCcw className="w-3 h-3" />
-                            </button>
-                          )}
-                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
-                            file.status === 'modified' ? 'text-amber-500 bg-amber-500/10' :
-                            file.status === 'untracked' ? 'text-green-500 bg-green-500/10' :
-                            file.status === 'added' ? 'text-blue-500 bg-blue-500/10' :
-                            'text-red-500 bg-red-500/10'
-                          }`}>
-                            {file.status[0].toUpperCase()}
-                          </span>
+                            )}
+                            {onDiscardFile && (
+                              <button
+                                onClick={async () => {
+                                  if (window.confirm(`Discard changes in ${file.file}?`)) {
+                                    await onDiscardFile(file.file, file.status);
+                                    onRefreshGit();
+                                  }
+                                }}
+                                title="Discard Changes"
+                                className="p-0.5 rounded hover:bg-red-500/20 text-[var(--text-secondary)] hover:text-red-400 opacity-0 group-hover:opacity-100 transition"
+                              >
+                                <RotateCcw className="w-3 h-3" />
+                              </button>
+                            )}
+                            <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${
+                              file.status === 'modified' ? 'text-amber-500 bg-amber-500/10' :
+                              file.status === 'untracked' ? 'text-green-500 bg-green-500/10' :
+                              file.status === 'added' ? 'text-blue-500 bg-blue-500/10' :
+                              'text-red-500 bg-red-500/10'
+                            }`}>
+                              {file.status[0].toUpperCase()}
+                            </span>
+                          </div>
                         </div>
-                      </div>
-                    ))
-                  )}
+                      ))
+                    )}
+                  </div>
                 </div>
               </>
             )}

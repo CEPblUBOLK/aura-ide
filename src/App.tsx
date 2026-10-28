@@ -127,18 +127,22 @@ export const App: React.FC = () => {
     }
   };
 
-  // Save workspace session to localStorage
+  // Save workspace session to localStorage with restored-guard and path-based tracking
+  const isSessionRestoredRef = useRef(false);
+
   useEffect(() => {
-    if (!workspacePath) return;
+    if (!workspacePath || !isSessionRestoredRef.current) return;
     const sessionKey = `aura_session_${workspacePath}`;
+    const activePath = tabs.find(t => t.id === activeTabId)?.path;
+    const splitPath = tabs.find(t => t.id === splitTabId)?.path;
     const sessionData = {
       openTabs: tabs.filter(t => !t.isDiff).map(t => ({
         path: t.path,
         name: t.name,
         relativePath: t.relativePath
       })),
-      activeTabId,
-      splitTabId,
+      activePath,
+      splitPath,
       isSplit,
     };
     try {
@@ -147,18 +151,45 @@ export const App: React.FC = () => {
   }, [workspacePath, tabs, activeTabId, splitTabId, isSplit]);
 
   const restoreSession = async (wsPath: string) => {
+    isSessionRestoredRef.current = false;
     try {
       const saved = localStorage.getItem(`aura_session_${wsPath}`);
       if (!saved) return;
       const data = JSON.parse(saved);
       if (Array.isArray(data.openTabs) && data.openTabs.length > 0) {
+        const loadedTabs: OpenTab[] = [];
         for (const item of data.openTabs) {
-          await openFileByPath(item.path);
+          try {
+            const res = await fetch(`/api/file?path=${encodeURIComponent(item.path)}`);
+            if (!res.ok) continue;
+            const fileData = await res.json();
+            if (typeof fileData.content !== 'string') continue;
+            loadedTabs.push({
+              id: `tab-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
+              name: item.name,
+              path: item.path,
+              relativePath: fileData.relativePath || item.relativePath,
+              content: fileData.content,
+              initialContent: fileData.content,
+              isDirty: false,
+              language: getFileLanguage(item.name),
+            });
+          } catch {}
+        }
+        if (loadedTabs.length > 0) {
+          setTabs(loadedTabs);
+          const activeMatch = loadedTabs.find(t => t.path === data.activePath) || loadedTabs[loadedTabs.length - 1];
+          setActiveTabId(activeMatch.id);
+          if (data.splitPath) {
+            const splitMatch = loadedTabs.find(t => t.path === data.splitPath);
+            if (splitMatch) setSplitTabId(splitMatch.id);
+          }
         }
       }
       if (data.isSplit) setIsSplit(true);
-      if (data.splitTabId) setSplitTabId(data.splitTabId);
-    } catch {}
+    } catch {} finally {
+      isSessionRestoredRef.current = true;
+    }
   };
 
   // Real-time backend file watcher listener
@@ -743,6 +774,16 @@ export const App: React.FC = () => {
     showToast('Открыт режим сравнения с кодом ИИ');
   };
 
+  const handleAcceptAiDiff = (diffTab: OpenTab) => {
+    const targetTab = tabs.find(t => !t.isDiff && t.path === diffTab.path);
+    if (targetTab) {
+      handleContentChange(targetTab.id, diffTab.content);
+      setTabs(prev => prev.filter(t => t.id !== diffTab.id));
+      setActiveTabId(targetTab.id);
+      showToast(`Изменения ИИ применены к ${targetTab.name}`);
+    }
+  };
+
   const handleCommitGit = async (message: string) => {
     const res = await fetch('/api/git/commit', {
       method: 'POST',
@@ -820,7 +861,7 @@ export const App: React.FC = () => {
       (window as any).chrome.webview.postMessage('dialog-open-folder');
     } else {
       try {
-        const res = await fetch('http://localhost:3001/api/dialog/open-folder', { method: 'POST' });
+        const res = await fetch('/api/dialog/open-folder', { method: 'POST' });
         const data = await res.json();
         if (data.success && data.path) {
           await handleSelectWorkspace(data.path);
@@ -912,6 +953,13 @@ export const App: React.FC = () => {
       } else if (isMod && e.key === '`') {
         e.preventDefault();
         setIsTerminalOpen(prev => !prev);
+      } else if (isMod && e.key === 'Tab') {
+        e.preventDefault();
+        if (state.tabs.length > 1) {
+          const idx = state.tabs.findIndex(t => t.id === state.activeTabId);
+          const nextIdx = (idx + (e.shiftKey ? -1 : 1) + state.tabs.length) % state.tabs.length;
+          setActiveTabId(state.tabs[nextIdx].id);
+        }
       } else if (isMod && e.key.toLowerCase() === 'w') {
         e.preventDefault();
         if (state.activeTabId) state.handleCloseTab(state.activeTabId);
@@ -1028,7 +1076,7 @@ export const App: React.FC = () => {
         )}
 
         {/* Editor Area & Terminal Panel */}
-        <div className="flex-1 flex flex-col min-w-0 h-full overflow-hidden">
+        <div className="flex-1 flex flex-col min-w-[260px] h-full overflow-hidden">
           <div className="flex-1 flex overflow-hidden">
             <EditorArea
               tabs={tabs}
@@ -1042,6 +1090,7 @@ export const App: React.FC = () => {
               onCloseTab={handleCloseTab}
               onContentChange={handleContentChange}
               onSaveFile={handleSaveFile}
+              onAcceptDiff={handleAcceptAiDiff}
               onSaveAsPrompt={() => setIsSaveAsOpen(true)}
               onOpenCommandPalette={() => setIsCommandPaletteOpen(true)}
               onOpenFolderDialog={handleOpenFolderPicker}

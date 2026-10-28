@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useState } from 'react';
+import React, { useRef, useEffect } from 'react';
 import Editor, { DiffEditor } from '@monaco-editor/react';
 import { 
   X, 
@@ -8,9 +8,10 @@ import {
   Command, 
   FolderOpen,
   Code2,
-  Save
+  Save,
+  Check
 } from 'lucide-react';
-import { OpenTab, EditorSettings, ThemeMode } from '../types';
+import { OpenTab, EditorSettings } from '../types';
 import { getFileIcon } from '../utils/fileIcons';
 import { registerMonacoCompletions } from '../utils/monacoCompletions';
 import { registerAiInlineCopilot } from '../utils/aiInlineCopilot';
@@ -24,9 +25,10 @@ interface EditorAreaProps {
   projectName: string;
   onSelectTab: (id: string) => void;
   onSelectSplitTab?: (id: string) => void;
-  onCloseTab: (id: string, e: React.MouseEvent) => void;
+  onCloseTab: (id: string, e?: React.MouseEvent) => void;
   onContentChange: (id: string, newContent: string) => void;
   onSaveFile: (id: string) => Promise<void>;
+  onAcceptDiff?: (diffTab: OpenTab) => void;
   onSaveAsPrompt: () => void;
   onOpenCommandPalette: () => void;
   onOpenFolderDialog: () => void;
@@ -327,6 +329,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   onCloseTab,
   onContentChange,
   onSaveFile,
+  onAcceptDiff,
   onSaveAsPrompt,
   onOpenCommandPalette,
   onOpenFolderDialog,
@@ -337,39 +340,39 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   insertCodeAction,
 }) => {
   const monacoRef = useRef<any>(null);
-  const editorRef = useRef<any>(null);
-  const activeTabIdRef = useRef(activeTabId);
+  const primaryEditorRef = useRef<any>(null);
+  const secondaryEditorRef = useRef<any>(null);
+  const lastFocusedEditorRef = useRef<any>(null);
+  const pendingJumpRef = useRef<{ line: number; col?: number; timestamp: number } | null>(null);
+
   const activeTab = tabs.find(t => t.id === activeTabId);
-  const splitTab = splitTabId ? tabs.find(t => t.id === splitTabId) : tabs.find(t => t.id !== activeTabId);
+  const splitTab = splitTabId ? tabs.find(t => t.id === splitTabId) : tabs.find(t => t.id !== activeTabId && !t.isDiff);
 
+  // Jump to line handler (supports both open tabs and newly mounted tabs)
   useEffect(() => {
-    activeTabIdRef.current = activeTabId;
-  }, [activeTabId]);
-
-  // Handle jump to specific line
-  useEffect(() => {
-    if (targetLocation && editorRef.current) {
-      editorRef.current.revealLineInCenter(targetLocation.line);
-      editorRef.current.setPosition({ lineNumber: targetLocation.line, column: targetLocation.col || 1 });
-      editorRef.current.focus();
+    if (!targetLocation) return;
+    pendingJumpRef.current = targetLocation;
+    if (primaryEditorRef.current) {
+      primaryEditorRef.current.revealLineInCenter(targetLocation.line);
+      primaryEditorRef.current.setPosition({ lineNumber: targetLocation.line, column: targetLocation.col || 1 });
+      primaryEditorRef.current.focus();
     }
   }, [targetLocation]);
 
-  // Handle code insertion at current cursor position
+  // Insert AI code into the last focused editor
   useEffect(() => {
-    if (insertCodeAction && editorRef.current && monacoRef.current) {
-      const editor = editorRef.current;
-      const selection = editor.getSelection();
-      const pos = editor.getPosition();
+    const targetEditor = lastFocusedEditorRef.current || primaryEditorRef.current;
+    if (insertCodeAction && targetEditor && monacoRef.current) {
+      const selection = targetEditor.getSelection();
+      const pos = targetEditor.getPosition();
       const range = selection && !selection.isEmpty()
         ? selection
         : (pos ? new monacoRef.current.Range(pos.lineNumber, pos.column, pos.lineNumber, pos.column) : new monacoRef.current.Range(1, 1, 1, 1));
-      editor.executeEdits('ai-insert', [{ range, text: insertCodeAction.code, forceMoveMarkers: true }]);
-      editor.focus();
+      targetEditor.executeEdits('ai-insert', [{ range, text: insertCodeAction.code, forceMoveMarkers: true }]);
+      targetEditor.focus();
     }
   }, [insertCodeAction]);
 
-  // Dynamically ensure Monaco applies the theme when settings.theme changes
   useEffect(() => {
     if (monacoRef.current) {
       try {
@@ -378,41 +381,55 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
     }
   }, [settings.theme]);
 
-  const handleEditorDidMount = (editor: any, monaco: any, isSecondary: boolean = false) => {
+  const handleEditorDidMount = (editor: any, monaco: any, tabId: string, isSecondary: boolean = false) => {
     if (!isSecondary) {
-      editorRef.current = editor;
+      primaryEditorRef.current = editor;
+      // If a line jump was requested while the tab was loading, execute immediately after mount
+      if (pendingJumpRef.current && Date.now() - pendingJumpRef.current.timestamp < 2000) {
+        const loc = pendingJumpRef.current;
+        pendingJumpRef.current = null;
+        setTimeout(() => {
+          editor.revealLineInCenter(loc.line);
+          editor.setPosition({ lineNumber: loc.line, column: loc.col || 1 });
+          editor.focus();
+        }, 30);
+      }
+    } else {
+      secondaryEditorRef.current = editor;
     }
+    lastFocusedEditorRef.current = editor;
     monacoRef.current = monaco;
     registerMonacoThemes(monaco);
     monaco.editor.setTheme(settings.theme);
 
-    // Track cursor movements for line/column counter in status bar
+    editor.onDidFocusEditorWidget(() => {
+      lastFocusedEditorRef.current = editor;
+    });
+
     editor.onDidChangeCursorPosition((e: any) => {
-      if (onCursorChange && !isSecondary) {
+      if (onCursorChange) {
         onCursorChange(e.position.lineNumber, e.position.column);
       }
     });
 
-    // Track editor selection for AI Copilot quick actions (Explain, Bugs, Optimize, Tests)
     editor.onDidChangeCursorSelection(() => {
-      if (onSelectionChange && !isSecondary) {
+      if (onSelectionChange) {
         const selection = editor.getSelection();
         const model = editor.getModel();
         if (selection && model && !selection.isEmpty()) {
-          const selectedText = model.getValueInRange(selection);
-          onSelectionChange(selectedText);
+          onSelectionChange(model.getValueInRange(selection));
         } else {
           onSelectionChange('');
         }
       }
     });
 
-    // Alt + \ to manually trigger AI Inline Copilot Completion
     editor.addCommand(monaco.KeyMod.Alt | monaco.KeyCode.Backslash, () => {
       editor.trigger('keyboard', 'editor.action.inlineSuggest.trigger', {});
     });
+    // Save file for whichever tab is currently focused (left or right split)
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyS, () => {
-      if (activeTabIdRef.current) onSaveFile(activeTabIdRef.current);
+      onSaveFile(tabId);
     });
     editor.addCommand(monaco.KeyMod.CtrlCmd | monaco.KeyCode.KeyP, () => {
       onOpenCommandPalette();
@@ -472,62 +489,102 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
     }
 
     if (tab.isDiff) {
+      const isAiDiff = tab.id.startsWith('ai-diff-');
       return (
-        <div className="flex-1 w-full h-full relative">
-          <DiffEditor
-            original={tab.originalContent || ''}
-            modified={tab.content}
-            language={tab.language}
-            beforeMount={registerMonacoThemes}
-            onMount={(editor, monaco) => { monacoRef.current = monaco; }}
-            theme={settings.theme}
-            options={{
-              fontSize: settings.fontSize,
-              fontFamily: settings.fontFamily,
-              renderSideBySide: true,
-              smoothScrolling: true,
-              automaticLayout: true,
-              readOnly: true,
-              minimap: { enabled: settings.minimap },
-            }}
-          />
+        <div className="flex-1 w-full h-full relative flex flex-col">
+          <div className="h-7 px-3 flex items-center justify-between text-xs bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)]">
+            <span className="font-mono text-[11px] text-[var(--text-secondary)]">
+              {isAiDiff ? `Сравнение текущего файла с предложением ИИ (${tab.relativePath})` : `Git Diff: ${tab.relativePath}`}
+            </span>
+            {isAiDiff && onAcceptDiff && (
+              <div className="flex items-center space-x-2">
+                <button
+                  onClick={() => onAcceptDiff(tab)}
+                  className="flex items-center space-x-1 px-2.5 py-0.5 rounded bg-emerald-600 hover:bg-emerald-500 text-white font-semibold text-[11px] transition shadow-sm"
+                >
+                  <Check className="w-3 h-3" />
+                  <span>Принять изменения ИИ</span>
+                </button>
+                <button
+                  onClick={(e) => onCloseTab(tab.id, e)}
+                  className="px-2 py-0.5 rounded bg-[var(--bg-hover)] hover:bg-rose-500/20 hover:text-rose-400 text-[var(--text-secondary)] text-[11px] transition"
+                >
+                  Отклонить
+                </button>
+              </div>
+            )}
+          </div>
+          <div className="flex-1 w-full">
+            <DiffEditor
+              original={tab.originalContent || ''}
+              modified={tab.content}
+              language={tab.language}
+              beforeMount={registerMonacoThemes}
+              onMount={(_editor, monaco) => { monacoRef.current = monaco; }}
+              theme={settings.theme}
+              options={{
+                fontSize: settings.fontSize,
+                fontFamily: settings.fontFamily,
+                renderSideBySide: true,
+                smoothScrolling: true,
+                automaticLayout: true,
+                readOnly: true,
+                minimap: { enabled: settings.minimap },
+              }}
+            />
+          </div>
         </div>
       );
     }
 
     return (
-      <div className="flex-1 w-full h-full relative flex flex-col bg-[var(--bg-primary)]">
+      <div className="flex-1 w-full h-full relative flex flex-col bg-[var(--bg-primary)] min-w-0">
         {/* Breadcrumb Path Bar */}
-        <div className="h-6 px-3 flex items-center space-x-1.5 text-[11px] text-[var(--text-secondary)] bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] select-none font-mono">
-          <span>{projectName}</span>
-          <ChevronRight className="w-3 h-3 text-[var(--text-secondary)]" />
-          {tab.relativePath.split('/').map((part, i, arr) => (
-            <React.Fragment key={i}>
-              <span className={i === arr.length - 1 ? 'text-[var(--text-primary)] font-medium' : ''}>
-                {part}
+        <div className="h-6 px-3 flex items-center justify-between text-[11px] text-[var(--text-secondary)] bg-[var(--bg-secondary)] border-b border-[var(--border-subtle)] select-none font-mono overflow-x-auto no-scrollbar whitespace-nowrap">
+          <div className="flex items-center space-x-1.5 min-w-0">
+            <span>{projectName}</span>
+            <ChevronRight className="w-3 h-3 shrink-0 text-[var(--text-secondary)]" />
+            {tab.relativePath.replace(/\\/g, '/').split('/').map((part, i, arr) => (
+              <React.Fragment key={i}>
+                <span className={i === arr.length - 1 ? 'text-[var(--text-primary)] font-medium' : ''}>
+                  {part}
+                </span>
+                {i < arr.length - 1 && <ChevronRight className="w-3 h-3 shrink-0 text-[var(--text-secondary)]" />}
+              </React.Fragment>
+            ))}
+            {tab.isDirty && (
+              <span className="text-[10px] text-amber-500 ml-2 font-sans font-medium flex items-center shrink-0">
+                <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block mr-1" />
+                Unsaved
               </span>
-              {i < arr.length - 1 && <ChevronRight className="w-3 h-3 text-[var(--text-secondary)]" />}
-            </React.Fragment>
-          ))}
-          {tab.isDirty && (
-            <span className="text-[10px] text-amber-500 ml-2 font-sans font-medium flex items-center">
-              <span className="w-1.5 h-1.5 rounded-full bg-amber-500 inline-block mr-1" />
-              Unsaved
-            </span>
+            )}
+          </div>
+
+          {isSecondary && (
+            <select
+              value={tab.id}
+              onChange={(e) => onSelectSplitTab?.(e.target.value)}
+              className="ml-2 bg-[var(--bg-primary)] text-[var(--text-primary)] border border-[var(--border-subtle)] rounded px-1.5 py-0.2 text-[10px] font-sans outline-none"
+              title="Выбрать вкладку для правого окна"
+            >
+              {tabs.filter(t => t.id !== activeTabId && !t.isDiff).map(t => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
           )}
         </div>
 
         {/* Monaco Editor Canvas */}
         <div className="flex-1 w-full h-full">
           <Editor
-            key={tab.id}
-            path={tab.path}
+            key={`${isSecondary ? 'split' : 'main'}-${tab.id}`}
+            path={isSecondary ? `split://${tab.path}` : tab.path}
             value={tab.content}
             language={tab.language}
             beforeMount={registerMonacoThemes}
             theme={settings.theme}
             onChange={(val) => onContentChange(tab.id, val || '')}
-            onMount={(ed, m) => handleEditorDidMount(ed, m, isSecondary)}
+            onMount={(ed, m) => handleEditorDidMount(ed, m, tab.id, isSecondary)}
             options={{
               fontSize: settings.fontSize,
               fontFamily: settings.fontFamily,
@@ -572,7 +629,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
   };
 
   return (
-    <div className="flex-1 flex flex-col h-full w-full overflow-hidden bg-[var(--bg-primary)]">
+    <div className="flex-1 flex flex-col h-full w-full min-w-[260px] overflow-hidden bg-[var(--bg-primary)]">
       {/* macOS Pill Tab Bar */}
       <div className="h-9 w-full flex items-center px-2 space-x-1 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] overflow-x-auto select-none no-scrollbar">
         {tabs.map((tab) => {
@@ -616,8 +673,7 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 
         <div className="flex-1" />
 
-        {/* Save & Save As buttons */}
-        {activeTab && (
+        {activeTab && !activeTab.isDiff && (
           <div className="flex items-center space-x-1 shrink-0 px-1">
             <button
               onClick={() => onSaveFile(activeTab.id)}
@@ -649,32 +705,12 @@ export const EditorArea: React.FC<EditorAreaProps> = ({
 
         {isSplit && (
           <div className="flex-1 flex flex-col border-l border-[var(--border-subtle)] min-w-0">
-            {/* Secondary Split Tab Bar */}
-            <div className="h-9 w-full flex items-center px-2 space-x-1 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] overflow-x-auto select-none no-scrollbar">
-              {tabs.map((tab) => {
-                const isActive = tab.id === splitTab?.id;
-                return (
-                  <div
-                    key={`split-${tab.id}`}
-                    onClick={() => onSelectSplitTab?.(tab.id)}
-                    className={`group flex items-center space-x-1.5 px-2.5 py-1 rounded-lg text-xs cursor-pointer transition-all border shrink-0 ${
-                      isActive
-                        ? 'bg-[var(--bg-secondary)] text-[var(--accent-color)] font-medium border-[var(--border-subtle)] shadow-sm'
-                        : 'text-[var(--text-secondary)] hover:text-[var(--text-primary)] hover:bg-[var(--bg-hover)] border-transparent'
-                    }`}
-                  >
-                    {getFileIcon(tab.name, false)}
-                    <span className="truncate max-w-[100px]">{tab.name}</span>
-                  </div>
-                );
-              })}
-            </div>
             {splitTab && splitTab.id !== activeTab?.id ? (
               renderSingleEditor(splitTab, true)
             ) : (
               <div className="flex-1 flex flex-col items-center justify-center p-6 text-center text-xs text-[var(--text-secondary)] select-none">
                 <Code2 className="w-8 h-8 text-[var(--accent-color)] mb-2 opacity-50" />
-                <span>Выберите другой файл сверху для раздельного просмотра</span>
+                <span>Откройте второй файл в проекте для параллельного просмотра</span>
               </div>
             )}
           </div>

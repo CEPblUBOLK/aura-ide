@@ -370,6 +370,11 @@ export const AiPanel: React.FC<AiPanelProps> = ({
     }
   };
 
+  const handleSwitchService = (next: 'gemini' | 'google' | 'deepseek') => {
+    setActiveService(next);
+    onServiceChange?.(next);
+  };
+
   const openInBrowser = () => {
     const url = activeService === 'deepseek' ? 'https://chat.deepseek.com' : 'https://www.google.com/search?q=&udm=50';
     window.open(url, '_blank');
@@ -397,7 +402,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
       <div className="h-10 px-2.5 flex items-center justify-between border-b border-[var(--border-subtle)] bg-[var(--bg-primary)] shrink-0">
         <div className="p-0.5 rounded-lg bg-[var(--bg-secondary)] border border-[var(--border-subtle)] flex items-center space-x-1">
           <button
-            onClick={() => setActiveService('gemini')}
+            onClick={() => handleSwitchService('gemini')}
             className={`px-2.5 py-1 rounded-md text-xs font-medium flex items-center space-x-1.5 transition-all ${
               activeService === 'gemini'
                 ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
@@ -409,7 +414,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveService('google')}
+            onClick={() => handleSwitchService('google')}
             className={`px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1 transition-all ${
               activeService === 'google'
                 ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
@@ -421,7 +426,7 @@ export const AiPanel: React.FC<AiPanelProps> = ({
           </button>
 
           <button
-            onClick={() => setActiveService('deepseek')}
+            onClick={() => handleSwitchService('deepseek')}
             className={`px-2 py-1 rounded-md text-xs font-medium flex items-center space-x-1 transition-all ${
               activeService === 'deepseek'
                 ? 'bg-[var(--accent-color)] text-[var(--accent-text)] shadow-sm'
@@ -555,14 +560,6 @@ export const AiPanel: React.FC<AiPanelProps> = ({
             {/* Quick Context Chips Bar */}
             <div className="px-3 py-1.5 border-b border-[var(--border-subtle)] bg-[var(--bg-sidebar)] flex items-center space-x-1.5 overflow-x-auto no-scrollbar text-[11px] shrink-0">
               <span className="text-[var(--text-secondary)] shrink-0 font-medium">Действия:</span>
-              <button
-                onClick={() => handleSendMessage('Объясни код в текущем файле подробно и понятно.')}
-                disabled={!activeTab || isLoading}
-                className="flex items-center space-x-1.5 px-2 py-0.5 rounded-md bg-[var(--bg-secondary)] hover:bg-[var(--bg-hover)] text-[var(--text-secondary)] hover:text-[var(--text-primary)] border border-[var(--border-subtle)] shrink-0 transition disabled:opacity-40"
-              >
-                <Code2 className="w-3 h-3 text-emerald-400" />
-                <span>Объяснить</span>
-              </button>
               <button
                 onClick={() => handleSendMessage(activeCodeSelection ? 'Объясни выделенный фрагмент кода и как он работает.' : 'Объясни структуру и логику этого файла.')}
                 disabled={!activeTab || isLoading}
